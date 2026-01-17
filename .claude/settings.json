@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash(git *)",
+      "Bash(mkdir *)",
+      "Bash(rm *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(touch *)",
+      "Bash(npx *)",
+      "Bash(node *)"
+    ],
+    "deny": [
+      "Bash(npm run dev*)",
+      "Bash(npm run build*)",
+      "Bash(npm start*)",
+      "Bash(npm run start*)",
+      "Bash(pnpm dev*)",
+      "Bash(pnpm build*)",
+      "Bash(yarn dev*)",
+      "Bash(yarn build*)"
+    ]
+  }
+}
