@@ -2,16 +2,32 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Sidebar from "@/components/dashboard/Sidebar";
-import { Upload, LogIn } from "lucide-react";
+import { Upload, LogIn, Mic, Clock } from "lucide-react";
 import ScribeRecorder from "@/components/ScribeRecorder";
 import { useSidebar } from "@/contexts/SidebarContext";
+import { toast } from "sonner";
+import { getAllUserSessions, type CallSession } from "@/lib/supabase-recording";
+
+interface RecordingData {
+  transcript: string;
+  segments: {
+    id: string;
+    text: string;
+    language?: string;
+    confidence?: number;
+    timestamp: number;
+  }[];
+  duration: number;
+  language?: string;
+}
 
 export default function RecordingsPage() {
   const { user, loading, refreshSession } = useAuth();
   const router = useRouter();
-  const [savedTranscripts, setSavedTranscripts] = useState<string[]>([]);
+  const [sessions, setSessions] = useState<CallSession[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(true);
   const { isCollapsed } = useSidebar();
 
   // Refresh session on mount to ensure we have latest auth state
@@ -26,11 +42,34 @@ export default function RecordingsPage() {
     }
   }, [loading, user, router]);
 
-  const handleTranscriptComplete = (transcript: string) => {
-    setSavedTranscripts(prev => [...prev, transcript]);
-    // TODO: Save to Supabase database
+  // Load sessions from database
+  useEffect(() => {
+    async function loadSessions() {
+      if (!user) return;
+
+      setLoadingSessions(true);
+      const data = await getAllUserSessions();
+      setSessions(data);
+      setLoadingSessions(false);
+    }
+
+    loadSessions();
+  }, [user]);
+
+  const handleTranscriptComplete = useCallback((transcript: string) => {
     console.log("Transcript completed:", transcript);
-  };
+  }, []);
+
+  const handleSaveRecording = useCallback(async (data: RecordingData) => {
+    toast.success("Recording saved successfully!", {
+      description: `${data.segments.length} segments, ${data.transcript.split(" ").filter(Boolean).length} words`,
+    });
+    console.log("Recording saved:", data);
+
+    // Reload sessions from database
+    const updatedSessions = await getAllUserSessions();
+    setSessions(updatedSessions);
+  }, []);
 
   // Show loading state
   if (loading) {
@@ -81,11 +120,14 @@ export default function RecordingsPage() {
 
         {/* Live Recording with WebSocket */}
         <div className="mb-8">
-          <ScribeRecorder onTranscriptComplete={handleTranscriptComplete} />
+          <ScribeRecorder
+            onTranscriptComplete={handleTranscriptComplete}
+            onSave={handleSaveRecording}
+          />
         </div>
 
         {/* Upload Area */}
-        <div className="bg-white rounded-2xl border-2 border-dashed border-gray-300 p-12 text-center mb-8 hover:border-gray-400 transition-colors">
+        <div className="bg-white rounded-2xl border-2 border-dashed border-gray-300 p-12 text-center mb-8 hover:border-gray-400 transition-colors cursor-pointer">
           <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Upload className="w-8 h-8 text-gray-600" />
           </div>
@@ -107,13 +149,61 @@ export default function RecordingsPage() {
             </div>
           </div>
 
-          <div className="p-12 text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Upload className="w-8 h-8 text-gray-400" />
+          {loadingSessions ? (
+            <div className="p-12 text-center">
+              <div className="w-12 h-12 border-4 border-[#FF6B35] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-gray-600">Loading recordings...</p>
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No recordings yet</h3>
-            <p className="text-gray-600">Upload your first recording to get started</p>
-          </div>
+          ) : sessions.length > 0 ? (
+            <div className="divide-y divide-gray-100">
+              {sessions.map((session, index) => (
+                <div key={session.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-[#FF6B35]/10 rounded-xl flex items-center justify-center">
+                        <Mic className="w-5 h-5 text-[#FF6B35]" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900">
+                          Recording #{sessions.length - index}
+                        </h4>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {new Date(session.started_at).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-gray-500">
+                      {session.duration_seconds !== null && session.duration_seconds !== undefined && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {Math.floor(session.duration_seconds / 60)}:{(session.duration_seconds % 60).toString().padStart(2, "0")}
+                        </span>
+                      )}
+                      <span className="px-2 py-1 bg-green-100 text-green-700 rounded-md font-medium">
+                        {session.total_segments} segments
+                      </span>
+                      <span className={`px-2 py-1 rounded-md font-medium ${
+                        session.status === 'completed' ? 'bg-green-100 text-green-700' :
+                        session.status === 'recording' ? 'bg-blue-100 text-blue-700' :
+                        session.status === 'processing' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-red-100 text-red-700'
+                      }`}>
+                        {session.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-12 text-center">
+              <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Mic className="w-8 h-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No recordings yet</h3>
+              <p className="text-gray-600">Record your first audio to get started</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

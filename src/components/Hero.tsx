@@ -3,7 +3,6 @@ import Link from "next/link";
 export default function Hero() {
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-b from-white via-blue-50/30 to-white">
-      {/* Background decorative elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-400/10 rounded-full blur-3xl" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-400/10 rounded-full blur-3xl" />
@@ -11,27 +10,20 @@ export default function Hero() {
 
       <div className="relative max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-28">
         <div className="text-center">
-          {/* Badge */}
           <div className="inline-flex items-center px-4 py-2 bg-blue-100 rounded-full text-blue-700 text-sm font-medium mb-8 animate-fade-in">
             <span className="w-2 h-2 bg-blue-600 rounded-full mr-2 animate-pulse" />
             Powered by ElevenLabs Scribe v2
           </div>
-
-          {/* Main Heading */}
           <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold text-gray-900 mb-6 leading-tight">
             Voice Compliance Made
             <span className="block bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               Simple & Secure
             </span>
           </h1>
-
-          {/* Subheading */}
           <p className="text-lg sm:text-xl md:text-2xl text-gray-600 mb-10 max-w-3xl mx-auto leading-relaxed">
             Leverage AI-powered voice transcription and compliance monitoring with ElevenLabs Scribe v2.
             Ensure regulatory adherence in real-time for all your voice communications.
           </p>
-
-          {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
             <Link
               href="/signup"
@@ -46,8 +38,6 @@ export default function Hero() {
               Watch Demo
             </Link>
           </div>
-
-          {/* Trust Indicators */}
           <div className="flex flex-wrap items-center justify-center gap-8 text-sm text-gray-500">
             <div className="flex items-center gap-2">
               <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
@@ -69,14 +59,10 @@ export default function Hero() {
             </div>
           </div>
         </div>
-
-        {/* Hero Image/Visualization */}
         <div className="mt-16 md:mt-20 relative">
           <div className="relative mx-auto max-w-5xl">
-            {/* Placeholder for demo/screenshot */}
             <div className="relative rounded-2xl bg-gradient-to-br from-gray-900 to-gray-800 shadow-2xl overflow-hidden border border-gray-700">
               <div className="aspect-video flex items-center justify-center p-8">
-                {/* Mock dashboard preview */}
                 <div className="w-full h-full bg-gray-800 rounded-lg border border-gray-700 p-6">
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
@@ -100,7 +86,6 @@ export default function Hero() {
               </div>
             </div>
 
-            {/* Floating elements */}
             <div className="absolute -top-4 -right-4 w-24 h-24 bg-blue-500 rounded-full blur-2xl opacity-20 animate-pulse" />
             <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-purple-500 rounded-full blur-2xl opacity-20 animate-pulse delay-1000" />
           </div>

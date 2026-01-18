@@ -29,7 +29,6 @@ export default function Header() {
       >
         <nav className="py-3 flex items-center pl-6 pr-3">
           <div className="flex justify-between items-center w-full">
-            {/* Logo */}
             <div className="flex items-center">
               <Link href="/">
                 <Image
@@ -41,8 +40,6 @@ export default function Header() {
                 />
               </Link>
             </div>
-
-            {/* Desktop Navigation */}
             <div className="hidden md:flex items-center space-x-8">
               <Link
                 href="#features"
@@ -70,12 +67,10 @@ export default function Header() {
               </Link>
             </div>
 
-            {/* CTA Buttons */}
             <div className="hidden md:flex items-center space-x-4">
               <AuthButton />
             </div>
 
-            {/* Mobile menu button */}
             <button
               type="button"
               className="md:hidden p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100"
@@ -99,8 +94,6 @@ export default function Header() {
               </svg>
             </button>
           </div>
-
-          {/* Mobile menu */}
           {mobileMenuOpen && (
             <div className="md:hidden py-4 border-t border-gray-200">
               <div className="flex flex-col space-y-4">

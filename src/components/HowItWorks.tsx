@@ -80,7 +80,6 @@ export default function HowItWorks() {
           </div>
         </div>
 
-        {/* CTA */}
         <div className="text-center mt-16">
           <a
             href="/login"

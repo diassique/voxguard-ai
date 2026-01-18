@@ -60,6 +60,17 @@ async function fetchNewToken(): Promise<string> {
   return data.token;
 }
 
+// Latency metrics interface
+interface LatencyMetrics {
+  lastChunkSentAt: number;
+  lastResponseAt: number;
+  lastLatency: number;
+  avgLatency: number;
+  minLatency: number;
+  maxLatency: number;
+  sampleCount: number;
+}
+
 export function useScribeRecording(config: ScribeConfig = {}) {
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -67,15 +78,36 @@ export function useScribeRecording(config: ScribeConfig = {}) {
   const [committedTranscripts, setCommittedTranscripts] = useState<TranscriptSegment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<"disconnected" | "connecting" | "connected" | "reconnecting" | "error">("disconnected");
+  const [latencyMetrics, setLatencyMetrics] = useState<LatencyMetrics>({
+    lastChunkSentAt: 0,
+    lastResponseAt: 0,
+    lastLatency: 0,
+    avgLatency: 0,
+    minLatency: Infinity,
+    maxLatency: 0,
+    sampleCount: 0,
+  });
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isIntentionalDisconnectRef = useRef(false);
   const isConnectingRef = useRef(false); // Prevent concurrent connection attempts
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+
+  // Audio recording for storage
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  // Latency tracking refs
+  const lastChunkSentTimeRef = useRef<number>(0);
+  const latencyHistoryRef = useRef<number[]>([]);
+
+  // Track recording state in ref for use in WebSocket close handler
+  const isRecordingRef = useRef<boolean>(false);
 
   const {
     modelId = "scribe_v2_realtime",
@@ -92,6 +124,35 @@ export function useScribeRecording(config: ScribeConfig = {}) {
   const getReconnectDelay = useCallback((attempt: number) => {
     return Math.min(reconnectDelay * Math.pow(2, attempt), 30000); // Max 30s
   }, [reconnectDelay]);
+
+  // Helper: Update latency metrics
+  const updateLatencyMetrics = useCallback((latency: number) => {
+    latencyHistoryRef.current.push(latency);
+    // Keep last 100 samples
+    if (latencyHistoryRef.current.length > 100) {
+      latencyHistoryRef.current.shift();
+    }
+
+    const history = latencyHistoryRef.current;
+    const avg = history.reduce((a, b) => a + b, 0) / history.length;
+    const min = Math.min(...history);
+    const max = Math.max(...history);
+
+    setLatencyMetrics({
+      lastChunkSentAt: lastChunkSentTimeRef.current,
+      lastResponseAt: performance.now(),
+      lastLatency: Math.round(latency),
+      avgLatency: Math.round(avg),
+      minLatency: Math.round(min),
+      maxLatency: Math.round(max),
+      sampleCount: history.length,
+    });
+
+    // Log every 10th sample for debugging
+    if (history.length % 10 === 0) {
+      console.log(`📊 Latency: ${Math.round(latency)}ms (avg: ${Math.round(avg)}ms, min: ${Math.round(min)}ms, max: ${Math.round(max)}ms)`);
+    }
+  }, []);
 
   // Connect to ElevenLabs WebSocket
   const connect = useCallback(async () => {
@@ -153,6 +214,7 @@ export function useScribeRecording(config: ScribeConfig = {}) {
 
       ws.addEventListener("message", (event) => {
         try {
+          const responseTime = performance.now();
           const message = JSON.parse(event.data);
           const messageType = message.type || message.message_type;
 
@@ -162,26 +224,51 @@ export function useScribeRecording(config: ScribeConfig = {}) {
               break;
 
             case "partial_transcript":
+              // Calculate latency from last sent chunk
+              if (lastChunkSentTimeRef.current > 0) {
+                const latency = responseTime - lastChunkSentTimeRef.current;
+                updateLatencyMetrics(latency);
+              }
               setPartialTranscript(message.text || message.partial_transcript || "");
               break;
 
             case "committed_transcript":
             case "committed_transcript_with_timestamps":
+              // Skip empty or whitespace-only transcripts
+              const text = (message.text || "").trim();
+              if (!text || text.length < 2) {
+                console.log("⚠️ Skipping empty or too short transcript");
+                setPartialTranscript("");
+                break;
+              }
+
               const segment: TranscriptSegment = {
                 id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                text: message.text,
+                text: text,
                 words: message.words,
                 language: message.language,
                 confidence: message.confidence,
                 timestamp: Date.now(),
               };
               setCommittedTranscripts((prev) => {
-                // Check if this segment already exists (prevent duplicates)
-                const exists = prev.some(s => s.text === segment.text && Math.abs(s.timestamp - segment.timestamp) < 1000);
-                if (exists) {
-                  console.warn("⚠️ Duplicate transcript detected, skipping");
+                // Check if this exact segment already exists (prevent duplicates)
+                // Compare by text content - if last segment has same text, skip
+                const lastSegment = prev[prev.length - 1];
+                if (lastSegment && lastSegment.text === segment.text) {
+                  console.warn("⚠️ Duplicate transcript detected (same as last segment), skipping");
                   return prev;
                 }
+
+                // Also check if any recent segment (within 2 seconds) has same text
+                const recentDuplicate = prev.some(s =>
+                  s.text === segment.text &&
+                  Math.abs(s.timestamp - segment.timestamp) < 2000
+                );
+                if (recentDuplicate) {
+                  console.warn("⚠️ Duplicate transcript detected (recent), skipping");
+                  return prev;
+                }
+
                 return [...prev, segment];
               });
               setPartialTranscript("");
@@ -266,11 +353,10 @@ export function useScribeRecording(config: ScribeConfig = {}) {
         setConnectionState("disconnected");
         globalConnectionLock = false; // Release lock on close
 
-        // Auto-reconnect logic
-        // Code 1000 = normal closure (ElevenLabs closes after commit)
-        // Code 1005 = no status received (also normal for ElevenLabs VAD)
-        // We want to reconnect automatically unless it was intentional disconnect
-        if (!isIntentionalDisconnectRef.current) {
+        // Auto-reconnect logic - ONLY if recording is active
+        // Don't reconnect if idle - ElevenLabs closes idle connections after ~30s
+        // and we don't want an infinite reconnect loop when not recording
+        if (!isIntentionalDisconnectRef.current && isRecordingRef.current) {
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
             setConnectionState("reconnecting");
             const delay = getReconnectDelay(reconnectAttemptsRef.current);
@@ -284,10 +370,11 @@ export function useScribeRecording(config: ScribeConfig = {}) {
             setError(`Connection lost. Maximum reconnection attempts (${maxReconnectAttempts}) reached.`);
             setConnectionState("error");
           }
-        } else {
+        } else if (isIntentionalDisconnectRef.current) {
           // Was intentional, reset flag
           isIntentionalDisconnectRef.current = false;
         }
+        // If not recording and not intentional, just stay disconnected (normal idle close)
       });
 
       wsRef.current = ws;
@@ -363,6 +450,8 @@ export function useScribeRecording(config: ScribeConfig = {}) {
       };
 
       try {
+        // Record send time for latency measurement
+        lastChunkSentTimeRef.current = performance.now();
         wsRef.current.send(JSON.stringify(message));
       } catch (err) {
         console.error("❌ Failed to send audio chunk:", err);
@@ -377,6 +466,19 @@ export function useScribeRecording(config: ScribeConfig = {}) {
       // Clear previous transcripts when starting new recording
       setCommittedTranscripts([]);
       setPartialTranscript("");
+
+      // Reset latency metrics
+      latencyHistoryRef.current = [];
+      lastChunkSentTimeRef.current = 0;
+      setLatencyMetrics({
+        lastChunkSentAt: 0,
+        lastResponseAt: 0,
+        lastLatency: 0,
+        avgLatency: 0,
+        minLatency: Infinity,
+        maxLatency: 0,
+        sampleCount: 0,
+      });
 
       if (!isConnected) {
         await connect();
@@ -398,6 +500,26 @@ export function useScribeRecording(config: ScribeConfig = {}) {
       });
 
       mediaStreamRef.current = stream;
+
+      // Create MediaRecorder for visualization library and audio storage
+      try {
+        const recorder = new MediaRecorder(stream);
+
+        // Collect audio chunks for storage
+        audioChunksRef.current = [];
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        recorder.start(1000); // Collect chunks every 1 second
+        mediaRecorderRef.current = recorder;
+        setMediaRecorder(recorder);
+        console.log("✅ MediaRecorder started for audio storage");
+      } catch (err) {
+        console.warn("MediaRecorder not supported, visualization may be limited:", err);
+      }
 
       // Create AudioContext
       const audioContext = new AudioContext({ sampleRate });
@@ -428,6 +550,7 @@ export function useScribeRecording(config: ScribeConfig = {}) {
       workletNode.connect(audioContext.destination);
 
       setIsRecording(true);
+      isRecordingRef.current = true;
       setError(null);
       console.log("✅ Recording started");
     } catch (err) {
@@ -445,6 +568,13 @@ export function useScribeRecording(config: ScribeConfig = {}) {
   // Stop recording
   const stopRecording = useCallback(() => {
     console.log("⏹️ Stopping recording...");
+
+    // Stop MediaRecorder
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+      setMediaRecorder(null);
+    }
 
     // Disconnect audio worklet
     if (audioWorkletNodeRef.current) {
@@ -476,6 +606,7 @@ export function useScribeRecording(config: ScribeConfig = {}) {
     }
 
     setIsRecording(false);
+    isRecordingRef.current = false;
     console.log("✅ Recording stopped");
   }, [sampleRate]);
 
@@ -525,6 +656,29 @@ export function useScribeRecording(config: ScribeConfig = {}) {
     };
   }, []); // Empty deps - only run on unmount
 
+  // Getter для mediaStream (для визуализации аудио)
+  const getMediaStream = useCallback(() => {
+    return mediaStreamRef.current;
+  }, []);
+
+  // Get audio blob for storage
+  const getAudioBlob = useCallback((): Blob | null => {
+    if (audioChunksRef.current.length === 0) {
+      console.warn("No audio chunks available");
+      return null;
+    }
+
+    try {
+      const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+      const blob = new Blob(audioChunksRef.current, { type: mimeType });
+      console.log(`📦 Created audio blob: ${blob.size} bytes (${mimeType})`);
+      return blob;
+    } catch (err) {
+      console.error("Failed to create audio blob:", err);
+      return null;
+    }
+  }, []);
+
   return {
     isConnected,
     isRecording,
@@ -532,11 +686,15 @@ export function useScribeRecording(config: ScribeConfig = {}) {
     committedTranscripts,
     error,
     connectionState,
+    latencyMetrics,
     connect,
     disconnect,
     startRecording,
     stopRecording,
     sendAudioChunk,
+    getMediaStream,
+    getAudioBlob,
+    mediaRecorder,
   };
 }
 

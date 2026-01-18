@@ -74,7 +74,6 @@ export default function DashboardSidebar({ user }: DashboardSidebarProps) {
 
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-gray-900 text-white flex flex-col">
-      {/* Logo */}
       <div className="p-6 border-b border-gray-800">
         <Link href="/dashboard" className="flex items-center space-x-2">
           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
@@ -83,8 +82,6 @@ export default function DashboardSidebar({ user }: DashboardSidebarProps) {
           <span className="text-xl font-bold">VoxGuard AI</span>
         </Link>
       </div>
-
-      {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
         {navigation.map((item) => {
           const isActive = pathname === item.href;
@@ -104,8 +101,6 @@ export default function DashboardSidebar({ user }: DashboardSidebarProps) {
           );
         })}
       </nav>
-
-      {/* User section */}
       <div className="p-4 border-t border-gray-800">
         <div className="flex items-center gap-3 mb-4 px-2">
           {user.image ? (
