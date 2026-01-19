@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface TranscriptWord {
-  word: string;
+  text: string;        // ElevenLabs returns 'text', not 'word'
   start: number;
   end: number;
+  type: 'word' | 'spacing';
+  speaker_id?: string;
+  logprob?: number;
 }
 
 interface TranscriptSegment {
@@ -197,6 +200,7 @@ export function useScribeRecording(config: ScribeConfig = {}) {
       url.searchParams.set("model_id", modelId);
       url.searchParams.set("commit_strategy", commitStrategy);
       url.searchParams.set("include_timestamps", String(includeTimestamps));
+      url.searchParams.set("timestamps_granularity", "word"); // Request word-level timestamps
       url.searchParams.set("include_language_detection", String(includeLanguageDetection));
       url.searchParams.set("vad_threshold", String(vadThreshold));
 
@@ -242,6 +246,16 @@ export function useScribeRecording(config: ScribeConfig = {}) {
                 break;
               }
 
+              // Debug: log full message structure from ElevenLabs
+              console.log("📝 ElevenLabs response:", {
+                type: messageType,
+                text: text,
+                words: message.words,
+                wordsCount: message.words?.length,
+                language: message.language,
+                confidence: message.confidence,
+              });
+
               const segment: TranscriptSegment = {
                 id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                 text: text,
@@ -251,21 +265,39 @@ export function useScribeRecording(config: ScribeConfig = {}) {
                 timestamp: Date.now(),
               };
               setCommittedTranscripts((prev) => {
-                // Check if this exact segment already exists (prevent duplicates)
-                // Compare by text content - if last segment has same text, skip
+                // ElevenLabs sends TWO messages per segment:
+                // 1. committed_transcript (without words)
+                // 2. committed_transcript_with_timestamps (with words)
+                // We want to REPLACE the first with the second
+
                 const lastSegment = prev[prev.length - 1];
-                if (lastSegment && lastSegment.text === segment.text) {
-                  console.warn("⚠️ Duplicate transcript detected (same as last segment), skipping");
+
+                // If last segment has same text but no words, and new segment has words
+                // REPLACE the last segment instead of adding a new one
+                if (lastSegment &&
+                    lastSegment.text === segment.text &&
+                    !lastSegment.words &&
+                    segment.words) {
+                  console.log("✅ Replacing segment without words with timestamped version");
+                  const updated = [...prev];
+                  updated[updated.length - 1] = segment;
+                  return updated;
+                }
+
+                // If last segment has same text AND has words, skip (true duplicate)
+                if (lastSegment && lastSegment.text === segment.text && lastSegment.words) {
+                  console.warn("⚠️ Duplicate transcript detected (same text, both have words), skipping");
                   return prev;
                 }
 
-                // Also check if any recent segment (within 2 seconds) has same text
+                // Also check if any recent segment (within 2 seconds) has same text with words
                 const recentDuplicate = prev.some(s =>
                   s.text === segment.text &&
+                  s.words && // Both have words
                   Math.abs(s.timestamp - segment.timestamp) < 2000
                 );
                 if (recentDuplicate) {
-                  console.warn("⚠️ Duplicate transcript detected (recent), skipping");
+                  console.warn("⚠️ Duplicate transcript detected (recent, both have words), skipping");
                   return prev;
                 }
 

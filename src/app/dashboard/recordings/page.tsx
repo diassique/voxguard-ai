@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
 import Sidebar from "@/components/dashboard/Sidebar";
-import { Upload, LogIn, Mic, Clock } from "lucide-react";
+import { Upload, LogIn, Mic, Clock, ChevronRight } from "lucide-react";
 import ScribeRecorder from "@/components/ScribeRecorder";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { toast } from "sonner";
@@ -157,14 +157,18 @@ export default function RecordingsPage() {
           ) : sessions.length > 0 ? (
             <div className="divide-y divide-gray-100">
               {sessions.map((session, index) => (
-                <div key={session.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
+                <div
+                  key={session.id}
+                  onClick={() => router.push(`/dashboard/recordings/${session.id}`)}
+                  className="px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer group"
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-[#FF6B35]/10 rounded-xl flex items-center justify-center">
-                        <Mic className="w-5 h-5 text-[#FF6B35]" />
+                      <div className="w-10 h-10 bg-[#FF6B35]/10 rounded-xl flex items-center justify-center group-hover:bg-[#FF6B35] transition-colors">
+                        <Mic className="w-5 h-5 text-[#FF6B35] group-hover:text-white transition-colors" />
                       </div>
                       <div>
-                        <h4 className="text-sm font-medium text-gray-900">
+                        <h4 className="text-sm font-medium text-gray-900 group-hover:text-[#FF6B35] transition-colors">
                           Recording #{sessions.length - index}
                         </h4>
                         <p className="text-xs text-gray-500 mt-0.5">
@@ -176,7 +180,7 @@ export default function RecordingsPage() {
                       {session.duration_seconds !== null && session.duration_seconds !== undefined && (
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {Math.floor(session.duration_seconds / 60)}:{(session.duration_seconds % 60).toString().padStart(2, "0")}
+                          {Math.floor(session.duration_seconds / 60)}:{Math.floor(session.duration_seconds % 60).toString().padStart(2, "0")}
                         </span>
                       )}
                       <span className="px-2 py-1 bg-green-100 text-green-700 rounded-md font-medium">
@@ -190,6 +194,7 @@ export default function RecordingsPage() {
                       }`}>
                         {session.status}
                       </span>
+                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-[#FF6B35] transition-colors" />
                     </div>
                   </div>
                 </div>

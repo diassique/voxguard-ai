@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
-import { Home, Mic, FileText, Settings, HelpCircle, LogOut, ChevronLeft, ChevronRight } from "lucide-react";
+import { Home, Mic, FileText, Settings, HelpCircle, LogOut, ChevronLeft, ChevronRight, Shield } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSidebar } from "@/contexts/SidebarContext";
 
@@ -11,6 +11,7 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: Home },
   { name: "Recordings", href: "/dashboard/recordings", icon: Mic },
   { name: "Reports", href: "/dashboard/reports", icon: FileText },
+  { name: "Compliance", href: "/dashboard/compliance", icon: Shield },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 

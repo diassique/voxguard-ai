@@ -11,6 +11,7 @@ import {
   updateSessionLatency,
   completeCallSession,
   uploadAudioFile,
+  processBatchTranscription,
 } from "@/lib/supabase-recording";
 import {
   Mic,
@@ -30,10 +31,19 @@ interface ScribeRecorderProps {
   onSave?: (data: RecordingData) => void;
 }
 
+interface TranscriptWord {
+  text: string;
+  start: number;
+  end: number;
+  type: 'word' | 'spacing';
+  speaker_id?: string;
+  logprob?: number;
+}
+
 interface TranscriptSegment {
   id: string;
   text: string;
-  words?: { word: string; start: number; end: number }[];
+  words?: TranscriptWord[];
   language?: string;
   confidence?: number;
   timestamp: number;
@@ -82,6 +92,10 @@ export default function ScribeRecorder({
   const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const savedSegmentsRef = useRef<Set<number>>(new Set());
+
+  // Track the first ElevenLabs word timestamp to calculate offset
+  const firstElevenLabsTimeRef = useRef<number | null>(null);
+  const firstSegmentReceivedAtRef = useRef<number | null>(null);
 
   // Автоскролл внутри контейнера транскриптов (не на всей странице)
   useEffect(() => {
@@ -133,6 +147,14 @@ export default function ScribeRecorder({
       const lastSegment = committedTranscripts[committedTranscripts.length - 1];
       if (!lastSegment) return;
 
+      // CRITICAL: Skip segments without word timestamps
+      // ElevenLabs sends committed_transcript first (no words), then committed_transcript_with_timestamps (with words)
+      // We only want to process the version WITH words
+      if (!lastSegment.words || lastSegment.words.length === 0) {
+        console.log(`⏭️ Skipping segment without word timestamps (waiting for timestamped version)`);
+        return;
+      }
+
       // Segment index should be 0-based (length - 1)
       const segmentIndex = committedTranscripts.length - 1;
 
@@ -142,23 +164,81 @@ export default function ScribeRecorder({
         return;
       }
 
-      // Вычислить start_time и end_time
+      // Mark as being saved NOW to prevent concurrent saves (React Strict Mode)
+      savedSegmentsRef.current.add(segmentIndex);
+
+      // Calculate start_time and end_time relative to recording start
+      // Use the timestamp when we RECEIVED the segment, not ElevenLabs internal timestamps
+      // ElevenLabs timestamps are relative to WebSocket connection, not audio recording
+      const segmentReceivedTime = lastSegment.timestamp;
+
+      // Safety check: if recordingStartTime is not set, use segment timestamp as base
+      const effectiveRecordingStart = recordingStartTime > 0 ? recordingStartTime : segmentReceivedTime;
+      const relativeStartTime = (segmentReceivedTime - effectiveRecordingStart) / 1000;
+
+      console.log(`🕐 Timing debug:`, {
+        segmentReceivedTime,
+        recordingStartTime,
+        effectiveRecordingStart,
+        diff: segmentReceivedTime - effectiveRecordingStart,
+      });
+
+      // Track first segment for offset calculation
+      // The offset is the difference between the first word's ElevenLabs timestamp
+      // and when we actually started recording
+      if (firstSegmentReceivedAtRef.current === null) {
+        firstSegmentReceivedAtRef.current = segmentReceivedTime;
+        if (lastSegment.words && lastSegment.words.length > 0) {
+          const wordEntries = lastSegment.words.filter((w: TranscriptWord) => w.type === 'word');
+          if (wordEntries.length > 0) {
+            firstElevenLabsTimeRef.current = wordEntries[0].start;
+            console.log(`🎯 First ElevenLabs timestamp: ${wordEntries[0].start}s`);
+          }
+        }
+      }
+
+      // Calculate start_time and end_time using ElevenLabs word timestamps
+      // These timestamps are relative to WebSocket connection, so we need to apply an offset
       let startTime = 0;
-      let endTime = undefined;
+      let endTime = 0;
 
       if (lastSegment.words && lastSegment.words.length > 0) {
-        // Filter only "word" type entries (not "spacing")
-        const wordEntries = lastSegment.words.filter((w: any) => w.type === 'word');
-        if (wordEntries.length > 0) {
-          startTime = wordEntries[0].start;
-          const lastWord = wordEntries[wordEntries.length - 1];
-          endTime = lastWord.end;
+        const wordEntries = lastSegment.words.filter((w: TranscriptWord) => w.type === 'word');
+        if (wordEntries.length > 0 && firstElevenLabsTimeRef.current !== null) {
+          // Use ElevenLabs timestamps directly, but subtract the offset
+          // The offset is the timestamp of the first word (when recording actually started)
+          const firstWordStart = wordEntries[0].start;
+          const lastWordEnd = wordEntries[wordEntries.length - 1].end;
+
+          // Apply offset: subtract the first word's timestamp from all segments
+          // This makes the first segment start at 0:00
+          const offset = firstElevenLabsTimeRef.current;
+          startTime = Math.max(0, firstWordStart - offset);
+          endTime = Math.max(0, lastWordEnd - offset);
+
+          console.log(`🎯 Word timestamps: first=${firstWordStart}s, last=${lastWordEnd}s, offset=${offset}s`);
         }
-      } else {
-        // Fallback: использовать относительное время
-        const relativeSeconds = (lastSegment.timestamp - recordingStartTime) / 1000;
-        startTime = relativeSeconds;
       }
+
+      // CRITICAL: Don't save segments without word timestamps
+      // ElevenLabs sends TWO messages per segment:
+      // 1. committed_transcript (without words)
+      // 2. committed_transcript_with_timestamps (with words)
+      // We ONLY want to save the second one with accurate timestamps
+      if (startTime === 0 && endTime === 0) {
+        console.warn(`⚠️ Segment ${segmentIndex} has no word timestamps yet, waiting for committed_transcript_with_timestamps...`);
+        return; // Don't save yet, wait for the message with timestamps
+      }
+
+      console.log(`⏱️ Segment ${segmentIndex} timing:`, {
+        segmentReceivedTime,
+        recordingStartTime,
+        relativeStartTime: relativeStartTime.toFixed(2),
+        calculatedStartTime: startTime.toFixed(2),
+        calculatedEndTime: endTime.toFixed(2),
+        segmentDuration: (endTime - startTime).toFixed(2),
+        text: lastSegment.text.substring(0, 30),
+      });
 
       // Сохранить в БД
       const saved = await saveTranscriptSegment(
@@ -171,14 +251,16 @@ export default function ScribeRecorder({
       );
 
       if (saved) {
-        // Mark this segment as saved
-        savedSegmentsRef.current.add(segmentIndex);
         console.log(`💾 Segment ${segmentIndex} saved:`, lastSegment.text.substring(0, 50));
 
         // Обновить латентность
         if (latencyMetrics.lastLatency > 0) {
           await updateSessionLatency(currentSessionId, latencyMetrics.lastLatency);
         }
+      } else {
+        // If save failed, remove from set so we can retry
+        savedSegmentsRef.current.delete(segmentIndex);
+        console.error(`❌ Failed to save segment ${segmentIndex}, will retry`);
       }
     };
 
@@ -204,6 +286,9 @@ export default function ScribeRecorder({
       // START recording
       // Очистить список сохранённых сегментов для новой записи
       savedSegmentsRef.current.clear();
+      // Reset timing refs for new recording
+      firstElevenLabsTimeRef.current = null;
+      firstSegmentReceivedAtRef.current = null;
 
       // Создать сессию в БД
       const session = await createCallSession();
@@ -225,12 +310,29 @@ export default function ScribeRecorder({
     if (currentSessionId) {
       const audioBlob = getAudioBlob();
       if (audioBlob) {
-        const loadingToast = toast.loading("Uploading audio...");
+        // Step 1: Upload audio
+        const uploadToast = toast.loading("Uploading audio...");
         const audioUrl = await uploadAudioFile(currentSessionId, audioBlob);
-        toast.dismiss(loadingToast);
+        toast.dismiss(uploadToast);
 
         if (audioUrl) {
           console.log("✅ Audio saved to:", audioUrl);
+
+          // Step 2: Process batch transcription for accurate timestamps + speaker diarization
+          const processingToast = toast.loading("Processing transcription with speaker detection...");
+          const success = await processBatchTranscription(currentSessionId, audioUrl);
+          toast.dismiss(processingToast);
+
+          if (success) {
+            toast.success("Recording saved with speaker identification!");
+
+            // Optional: reload the page or redirect to the recording detail page
+            setTimeout(() => {
+              window.location.href = `/dashboard/recordings/${currentSessionId}`;
+            }, 1000);
+          } else {
+            toast.error("Failed to process transcription. Using real-time data.");
+          }
         } else {
           toast.error("Failed to upload audio");
         }

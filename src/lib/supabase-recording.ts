@@ -32,7 +32,7 @@ export interface CallTranscript {
   text: string;
   start_time: number;
   end_time?: number;
-  words?: Array<{ text: string; start: number; end: number; logprob?: number }>;
+  words?: Array<{ text: string; start: number; end: number; type: string; speaker_id?: string; logprob?: number }>;
   word_count?: number;
   char_count?: number;
   speaker_id?: string;
@@ -101,7 +101,7 @@ export async function saveTranscriptSegment(
   text: string,
   startTime: number,
   endTime?: number,
-  words?: Array<{ word: string; start: number; end: number }>,
+  words?: Array<{ text: string; start: number; end: number; type: string; speaker_id?: string; logprob?: number }>,
 ): Promise<CallTranscript | null> {
   const supabase = createClient();
 
@@ -126,7 +126,17 @@ export async function saveTranscriptSegment(
     .single();
 
   if (error) {
-    console.error('Failed to save transcript segment:', error);
+    console.error('Failed to save transcript segment:', {
+      error,
+      errorMessage: error.message,
+      errorCode: error.code,
+      errorDetails: error.details,
+      errorHint: error.hint,
+      sessionId,
+      segmentIndex,
+      textLength: text?.length,
+      startTime,
+    });
     return null;
   }
 
@@ -283,8 +293,34 @@ export async function getSessionWithTranscripts(sessionId: string) {
 
   const transcripts = await getSessionTranscripts(sessionId);
 
+  // Если есть audio_url, получить свежий signed URL
+  let audioUrl = session.audio_url;
+  if (audioUrl) {
+    // Извлечь путь файла из URL
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const fileName = `${user.id}/${sessionId}.webm`;
+      const { data: signedData, error: signError } = await supabase.storage
+        .from('recordings')
+        .createSignedUrl(fileName, 3600); // 1 час
+
+      console.log('🔗 Signed URL result:', { signedData, signError, fileName });
+
+      if (signedData?.signedUrl) {
+        // signedUrl может быть относительным, добавим базовый URL если нужно
+        if (signedData.signedUrl.startsWith('/')) {
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+          audioUrl = `${supabaseUrl}/storage/v1${signedData.signedUrl}`;
+        } else {
+          audioUrl = signedData.signedUrl;
+        }
+        console.log('🔊 Final audio URL:', audioUrl);
+      }
+    }
+  }
+
   return {
-    session: session as CallSession,
+    session: { ...session, audio_url: audioUrl } as CallSession,
     transcripts,
   };
 }
@@ -420,23 +456,177 @@ export async function uploadAudioFile(
       return null;
     }
 
-    // Получить публичный URL
-    const { data: urlData } = supabase.storage
+    // Получить signed URL (работает для приватных bucket'ов)
+    // URL действителен 1 год (31536000 секунд)
+    const { data: signedData, error: signedError } = await supabase.storage
       .from('recordings')
-      .getPublicUrl(fileName);
+      .createSignedUrl(fileName, 31536000);
 
-    const publicUrl = urlData.publicUrl;
-    console.log('✅ Audio uploaded:', publicUrl);
+    if (signedError || !signedData?.signedUrl) {
+      console.error('Failed to create signed URL:', signedError);
+      // Fallback к публичному URL
+      const { data: urlData } = supabase.storage
+        .from('recordings')
+        .getPublicUrl(fileName);
+
+      const publicUrl = urlData.publicUrl;
+      console.log('✅ Audio uploaded (public URL):', publicUrl);
+
+      await supabase
+        .from('call_sessions')
+        .update({ audio_url: publicUrl })
+        .eq('id', sessionId);
+
+      return publicUrl;
+    }
+
+    console.log('✅ Audio uploaded (signed URL):', signedData.signedUrl);
 
     // Обновить session с audio_url
     await supabase
       .from('call_sessions')
-      .update({ audio_url: publicUrl })
+      .update({ audio_url: signedData.signedUrl })
       .eq('id', sessionId);
 
-    return publicUrl;
+    return signedData.signedUrl;
   } catch (err) {
     console.error('Error uploading audio:', err);
     return null;
+  }
+}
+
+/**
+ * Process batch transcription and save to database
+ * This replaces the real-time segments with accurate batch-processed segments
+ */
+export async function processBatchTranscription(
+  sessionId: string,
+  audioUrl: string,
+): Promise<boolean> {
+  try {
+    console.log('🎙️ Starting batch transcription for session:', sessionId);
+
+    // Call batch transcription API
+    const response = await fetch('/api/transcribe-batch', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ audioUrl }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Batch transcription API error:', errorData);
+      return false;
+    }
+
+    const result = await response.json();
+    console.log('✅ Batch transcription completed');
+    console.log('📊 Response:', {
+      text: result.text?.substring(0, 100),
+      wordsCount: result.words?.length,
+      languageCode: result.language_code
+    });
+
+    // Delete old real-time segments
+    const supabase = createClient();
+    const { error: deleteError } = await supabase
+      .from('call_transcripts')
+      .delete()
+      .eq('session_id', sessionId);
+
+    if (deleteError) {
+      console.error('Failed to delete old segments:', deleteError);
+      return false;
+    }
+
+    console.log('🗑️ Deleted old real-time segments');
+
+    // ElevenLabs batch API returns a flat array of words with speaker_id
+    // We need to group them into segments by speaker changes
+    if (result.words && result.words.length > 0) {
+      const segments: any[] = [];
+      let currentSegment: any = null;
+
+      for (const word of result.words) {
+        const speaker = word.speaker_id || 'SPEAKER_00';
+
+        // Start new segment if speaker changed or first word
+        if (!currentSegment || currentSegment.speaker_id !== speaker) {
+          if (currentSegment) {
+            segments.push(currentSegment);
+          }
+
+          currentSegment = {
+            speaker_id: speaker,
+            words: [word],
+            start_time: word.start,
+            end_time: word.end,
+          };
+        } else {
+          // Add word to current segment
+          currentSegment.words.push(word);
+          currentSegment.end_time = word.end;
+        }
+      }
+
+      // Push last segment
+      if (currentSegment) {
+        segments.push(currentSegment);
+      }
+
+      console.log(`📊 Created ${segments.length} segments from ${result.words.length} words`);
+
+      // Convert to database format
+      const newSegments = segments.map((segment: any, index: number) => {
+        const text = segment.words.map((w: any) => w.text).join('');
+
+        return {
+          session_id: sessionId,
+          segment_index: index,
+          text: text.trim(),
+          start_time: segment.start_time,
+          end_time: segment.end_time,
+          speaker_id: segment.speaker_id,
+          words: segment.words,
+          word_count: segment.words.length,
+          char_count: text.length,
+          has_alert: false,
+          source: 'batch',
+        };
+      });
+
+      const { error: insertError } = await supabase
+        .from('call_transcripts')
+        .insert(newSegments);
+
+      if (insertError) {
+        console.error('Failed to insert batch segments:', insertError);
+        return false;
+      }
+
+      console.log(`✅ Saved ${newSegments.length} batch-processed segments`);
+
+      // Update session metrics
+      await updateSessionMetrics(sessionId);
+    } else {
+      console.warn('⚠️ No words in batch transcription result');
+      return false;
+    }
+
+    // Update session status
+    await supabase
+      .from('call_sessions')
+      .update({
+        status: 'completed',
+        language_code: result.language_code || null,
+      })
+      .eq('id', sessionId);
+
+    return true;
+  } catch (error) {
+    console.error('Batch transcription processing error:', error);
+    return false;
   }
 }
