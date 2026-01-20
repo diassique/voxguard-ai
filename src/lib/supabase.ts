@@ -8,7 +8,6 @@ export const createClient = () => {
   return createBrowserClient(supabaseUrl, supabaseAnonKey);
 };
 
-// Export a singleton instance for use in client components
 export const supabase = createClient();
 
 // Sign out
