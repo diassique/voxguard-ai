@@ -1,239 +1,267 @@
-# ✅ Compliance Dashboard - Реализовано
+# ✅ Compliance Dashboard - Implemented
 
-## Что было создано
+## What Was Created
 
-Полноценный раздел **Compliance** для отображения и управления правилами комплаенса в вашем продукте VoxGuard AI.
+A full-featured **Compliance** section to display and manage compliance rules in your VoxGuard AI product.
 
-## 📁 Структура файлов
+## 📁 File Structure
 
 ### 1. TypeScript Types
+
 ```
 src/types/compliance.types.ts
 ```
-- Полные типы для всех сущностей compliance
+
+- Full types for all compliance entities
 - Enum types: SeverityLevel, RuleCategory, JurisdictionType, ActionType
-- Интерфейсы: ComplianceRule, RulesStats, RulesByCategory, ComplianceAlert
-- Helper функции: getSeverityColor(), getSeverityBadgeClass(), getCategoryLabel()
+- Interfaces: ComplianceRule, RulesStats, RulesByCategory, ComplianceAlert
+- Helper functions: getSeverityColor(), getSeverityBadgeClass(), getCategoryLabel()
 
 ### 2. API Routes
+
 ```
 src/app/api/compliance/rules/route.ts
 src/app/api/compliance/stats/route.ts
 ```
-- GET `/api/compliance/rules` - получение правил с фильтрами
-- GET `/api/compliance/stats` - получение статистики
+
+- GET `/api/compliance/rules` - fetch rules with filters
+- GET `/api/compliance/stats` - fetch statistics
 
 ### 3. React Components
+
 ```
 src/components/compliance/
-  ├── ComplianceStats.tsx        # Карточки статистики
-  ├── RulesTable.tsx             # Таблица с правилами + детальный модал
-  ├── CategoryBreakdown.tsx      # Разбивка по категориям
-  └── index.ts                   # Экспорт компонентов
+  ├── ComplianceStats.tsx        # Statistic cards
+  ├── RulesTable.tsx             # Rules table + detailed modal
+  ├── CategoryBreakdown.tsx      # Breakdown by category
+  └── index.ts                   # Component exports
 ```
 
 ### 4. Dashboard Page
+
 ```
 src/app/dashboard/compliance/page.tsx
 ```
-- Server Component с fetching данных из Supabase
-- Интегрированные компоненты статистики, таблицы, категорий
-- Quick Actions панель
-- Regulatory Coverage секция
+
+- Server Component with data fetching from Supabase
+- Integrated statistics, table, category components
+- Quick Actions panel
+- Regulatory Coverage section
 - No-data state
 
 ### 5. Utilities
+
 ```
 src/lib/supabase-server.ts
 ```
-- Server-side Supabase client для использования в Server Components
+
+- Server-side Supabase client for use in Server Components
 
 ### 6. Documentation
+
 ```
 COMPLIANCE_SETUP.md
-COMPLIANCE_README.md (этот файл)
+COMPLIANCE_README.md (this file)
 ```
 
 ## 🎨 UI/UX Features
 
-### Главная страница (/dashboard/compliance)
+### Main Page (/dashboard/compliance)
 
 #### Stats Overview
-- 6 карточек статистики:
+
+- 6 statistic cards:
   - Total Rules
   - Active Rules
-  - Critical (красный)
-  - High Priority (оранжевый)
-  - Medium Priority (желтый)
-  - Low Priority (синий)
+  - Critical (red)
+  - High Priority (orange)
+  - Medium Priority (yellow)
+  - Low Priority (blue)
 
 #### Category Breakdown
-- Группировка правил по категориям
-- Показ severity badges
-- Средний risk score по категории
-- Hover эффекты
+
+- Rules grouped by category
+- Severity badges display
+- Average risk score per category
+- Hover effects
 
 #### Quick Actions Panel
-- 4 быстрых действия:
+
+- 4 quick actions:
   - 🚨 View Alerts
   - 📊 Analytics
   - ⚙️ Configure Rules
   - 📋 Export Report
 
 #### Regulatory Coverage
-- Визуальное отображение поддерживаемых юрисдикций:
+
+- Visual display of supported jurisdictions:
   - 🇺🇸 SEC / FINRA (US)
   - 🇪🇺 MiFID II / GDPR (EU)
   - 🌍 Global Standards (PCI DSS, HIPAA)
 
 #### Rules Table
-- **Поиск** по названию, коду и категории
-- **Сортировка** по risk score (по умолчанию)
-- **Колонки:**
-  - Rule Code (моноширинный шрифт)
-  - Name (с описанием)
+
+- **Search** by name, code, and category
+- **Sort** by risk score (default)
+- **Columns:**
+  - Rule Code (monospace font)
+  - Name (with description)
   - Category
-  - Severity (цветные badges)
-  - Risk Score (с прогресс-баром)
+  - Severity (colored badges)
+  - Risk Score (with progress bar)
   - Jurisdiction
   - Status (Active/Inactive)
-  - Triggers (количество срабатываний)
+  - Triggers (count of triggers)
 
-#### Детальный модал правила
-При клике на строку открывается модальное окно с полной информацией:
-- Заголовок и rule code
+#### Detailed Rule Modal
+
+Clicking a row opens a modal with full information:
+
+- Title and rule code
 - Description
-- Severity и Risk Score
-- Category и Jurisdiction
-- Regulation information (с ссылкой)
+- Severity and Risk Score
+- Category and Jurisdiction
+- Regulation information (with link)
 - Detection Keywords (badges)
-- Alert Messages (для агента и супервайзера)
-- Actions (primary и secondary)
+- Alert Messages (for agent and supervisor)
+- Actions (primary and secondary)
 - Statistics (triggers, false positives, FP rate)
 
-## 🎯 Интеграция с вашей БД
+## 🎯 Integration with Your DB
 
-Компоненты ожидают следующие таблицы/views в Supabase:
+Components expect the following tables/views in Supabase:
 
 ### Tables
-- `compliance_rules` - основная таблица с правилами
+
+- `compliance_rules` - main rules table
 
 ### Views
-- `v_rules_stats` - агрегированная статистика
-- `v_rules_by_category` - правила сгруппированные по категориям
+
+- `v_rules_stats` - aggregated statistics
+- `v_rules_by_category` - rules grouped by category
 
 ### Functions
-- `get_elevenlabs_keyterms(max_terms)` - получение keyterms для ElevenLabs
-- `get_realtime_rules()` - получение активных правил для real-time проверки
-- `increment_rule_trigger(rule_code)` - инкремент счётчика срабатываний
 
-## 🔌 Как использовать
+- `get_elevenlabs_keyterms(max_terms)` - fetch keyterms for ElevenLabs
+- `get_realtime_rules()` - fetch active rules for real-time check
+- `increment_rule_trigger(rule_code)` - increment trigger counter
 
-### 1. Импортируйте SQL схему
-Выполните SQL из вашей схемы в Supabase SQL Editor (см. COMPLIANCE_SETUP.md)
+## 🔌 How to Use
 
-### 2. Проверьте переменные окружения
+### 1. Import SQL Schema
+
+Execute SQL from your schema in Supabase SQL Editor (see COMPLIANCE_SETUP.md)
+
+### 2. Check Environment Variables
+
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-### 3. Откройте страницу
+### 3. Open Page
+
 ```
 http://localhost:3000/dashboard/compliance
 ```
 
-### 4. Используйте компоненты отдельно (опционально)
+### 4. Use Components Separately (Optional)
 
 ```tsx
 import { ComplianceStats, RulesTable } from '@/components/compliance';
 
-// В вашем компоненте
+// In your component
 <ComplianceStats stats={stats} />
 <RulesTable rules={rules} />
 ```
 
-## 🎨 Дизайн-система
+## 🎨 Design System
 
-### Цвета severity
+### Severity Colors
+
 - **Critical**: `#dc2626` (red-600)
 - **High**: `#ea580c` (orange-600)
 - **Medium**: `#f59e0b` (amber-500)
 - **Low**: `#3b82f6` (blue-500)
 
 ### Badges
-- Используют Tailwind утилиты
-- Dark mode поддержка
-- Прозрачность для темы
+
+- Uses Tailwind utilities
+- Dark mode support
+- Transparency for theme
 
 ### Typography
-- Заголовки: `font-semibold` / `font-bold`
-- Моноширинный для кодов: `font-mono`
-- Размеры: `text-xs` до `text-3xl`
+
+- Headings: `font-semibold` / `font-bold`
+- Monospace for codes: `font-mono`
+- Sizes: `text-xs` to `text-3xl`
 
 ### Spacing
+
 - Padding: `p-4`, `p-6`, `p-8`
 - Gaps: `gap-4`, `gap-6`
 - Margins: `mb-4`, `mb-6`, `mb-8`
 
 ### Borders & Shadows
+
 - Border radius: `rounded-lg`, `rounded-2xl`
 - Border color: `border-gray-200` / `dark:border-gray-700`
 - Hover shadows: `hover:shadow-lg`
 
-## 🚀 Возможности для расширения
+## 🚀 Expansion Capabilities
 
-### Что можно добавить:
+### What Can Be Added:
 
-1. **Real-time детекция**
-   - WebSocket подключение к recording
-   - Live alerts во время разговора
-   - Автоматическая транскрипция + matching
+1. **Real-time Detection**
+   - WebSocket connection to recording
+   - Live alerts during call
+   - Automatic transcription + matching
 
 2. **Alerts Management**
-   - Страница `/dashboard/compliance/alerts`
-   - Фильтры по severity, category, date
+   - Page `/dashboard/compliance/alerts`
+   - Filters by severity, category, date
    - Acknowledge/Resolve workflow
-   - Export в CSV/PDF
+   - Export to CSV/PDF
 
 3. **Analytics Dashboard**
-   - Графики срабатываний по времени
+   - Trigger charts over time
    - Top violated rules
    - False positive trends
-   - Heat map по категориям
+   - Heat map by categories
 
 4. **Rule Builder**
-   - Форма создания правила
+   - Rule creation form
    - Regex tester
    - Pattern preview
    - Bulk import/export
 
 5. **Audit Log**
-   - История изменений правил
+   - Rule change history
    - Who/When/What changed
    - Diff view
 
 6. **Notifications**
-   - Email алерты
-   - Slack/Teams интеграция
+   - Email alerts
+   - Slack/Teams integration
    - Webhook endpoints
    - In-app notifications
 
 7. **Reports**
-   - Scheduled PDF/Excel отчёты
+   - Scheduled PDF/Excel reports
    - Custom report builder
    - Compliance certificates
    - Executive summaries
 
 8. **ML Integration**
-   - Автоматическая калибровка thresholds
+   - Automatic threshold calibration
    - Anomaly detection
    - Pattern suggestions
    - False positive prediction
 
-## 📊 Примеры данных
+## 📊 Data Examples
 
-После импорта схемы у вас будет **19 правил**:
+After importing schema you will have **19 rules**:
 
 - **3 Critical**: SEC_INSIDER_001, SEC_MANIPULATION_001, THREAT_001
 - **6 High**: SEC_GUARANTEE_001, PII_DISCLOSURE_001, PCI_VIOLATION_001, PHI_VIOLATION_001, FRAUD_INDICATOR_001
@@ -242,37 +270,37 @@ import { ComplianceStats, RulesTable } from '@/components/compliance';
 
 ## 🔐 Security
 
-- ✅ Row Level Security (RLS) включен
-- ✅ Authenticated users могут читать
-- ✅ Service role может всё
-- ✅ Server Components для безопасного fetching
-- ✅ No direct DB credentials в клиенте
+- ✅ Row Level Security (RLS) enabled
+- ✅ Authenticated users can read
+- ✅ Service role can do everything
+- ✅ Server Components for secure fetching
+- ✅ No direct DB credentials in client
 
 ## 📱 Responsive Design
 
 - ✅ Mobile-friendly grid layouts
-- ✅ Адаптивные колонки (1-6 columns)
-- ✅ Scrollable таблица на мобильных
-- ✅ Полноэкранный модал
+- ✅ Adaptive columns (1-6 columns)
+- ✅ Scrollable table on mobile
+- ✅ Full-screen modal
 
 ## 🌙 Dark Mode
 
-- ✅ Все компоненты поддерживают dark mode
-- ✅ Использует `dark:` префикс Tailwind
-- ✅ Автоматическое переключение с системной темой
+- ✅ All components support dark mode
+- ✅ Uses `dark:` Tailwind prefix
+- ✅ Automatic switch with system theme
 
-## ✨ Анимации
+## ✨ Animations
 
-- ✅ Smooth transitions на hover
-- ✅ Fade-in для модалов
+- ✅ Smooth transitions on hover
+- ✅ Fade-in for modals
 - ✅ Loading states
 
-## 🧪 Тестирование
+## 🧪 Testing
 
-Для тестирования без реальных данных:
+For testing without real data:
 
 ```tsx
-// Моковые данные в page.tsx (временно)
+// Mock data in page.tsx (temporary)
 const mockStats = {
   total_rules: 19,
   active_rules: 18,
@@ -287,25 +315,27 @@ const mockStats = {
 
 ## 💡 Best Practices
 
-1. **Используйте Server Components** где возможно (меньше JS на клиенте)
-2. **Кешируйте запросы** с revalidate для performance
-3. **Добавьте loading states** для лучшего UX
-4. **Error boundaries** для обработки ошибок
+1. **Use Server Components** where possible (less JS on client)
+2. **Cache requests** with revalidate for performance
+3. **Add loading states** for better UX
+4. **Error boundaries** for error handling
 5. **Accessibility** - ARIA labels, keyboard navigation
-6. **SEO** - metadata для страницы
+6. **SEO** - metadata for page
 
-## 🎯 Итог
+## 🎯 Summary
 
-Вы получили:
-- ✅ Полноценную страницу Compliance Dashboard
-- ✅ Компоненты для визуализации данных
-- ✅ API routes для работы с данными
-- ✅ Типизацию TypeScript
-- ✅ Интеграцию с Supabase
-- ✅ Документацию по настройке
+You received:
+
+- ✅ Full Compliance Dashboard page
+- ✅ Components for data visualization
+- ✅ API routes for data handling
+- ✅ TypeScript typing
+- ✅ Integration with Supabase
+- ✅ Setup documentation
 - ✅ Ready for production code
 
 **Next steps:**
-1. Импортируйте SQL схему
-2. Откройте `/dashboard/compliance`
-3. Наслаждайтесь! 🎉
+
+1. Import SQL schema
+2. Open `/dashboard/compliance`
+3. Enjoy! 🎉

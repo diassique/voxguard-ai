@@ -2,156 +2,159 @@
 
 ## Overview
 
-Этот раздел предоставляет полноценный Compliance Rules Engine для мониторинга голосовых записей на соответствие регуляторным требованиям (SEC, FINRA, GDPR, MiFID II, PCI DSS, HIPAA и др.).
+This section provides a complete Compliance Rules Engine for monitoring voice recordings for regulatory compliance (SEC, FINRA, GDPR, MiFID II, PCI DSS, HIPAA, etc.).
 
-## Возможности
+## Features
 
-- ✅ **19 предустановленных правил** по категориям:
-  - 🚨 Critical (3 правила): Insider Trading, Market Manipulation, Threats
-  - ⚠️ High (6 правил): Investment Guarantees, PII/PCI/PHI violations, Fraud indicators
-  - ⚡ Medium (6 правил): Pressure sales, Unsuitable advice, Off-channel communication
-  - ℹ️ Low (4 правила): Competitor mentions, Complaints, Recording consent
+- ✅ **19 pre-configured rules** by category:
+  - 🚨 Critical (3 rules): Insider Trading, Market Manipulation, Threats
+  - ⚠️ High (6 rules): Investment Guarantees, PII/PCI/PHI violations, Fraud indicators
+  - ⚡ Medium (6 rules): Pressure sales, Unsuitable advice, Off-channel communication
+  - ℹ️ Low (4 rules): Competitor mentions, Complaints, Recording consent
 
-- 📊 **Статистика и аналитика** в реальном времени
-- 🎯 **Детекция по ключевым словам** и regex-паттернам
-- 🌍 **Поддержка юрисдикций**: US, EU, UK, GLOBAL, APAC
-- 🔔 **Настраиваемые действия**: от алертов до остановки звонка
-- 📈 **Risk scoring** с весами и множителями
-- 🔍 **Интеграция с ElevenLabs Scribe V2** keyterms
+- 📊 **Real-time statistics and analytics**
+- 🎯 **Detection by keyword** and regex patterns
+- 🌍 **Jurisdiction support**: US, EU, UK, GLOBAL, APAC
+- 🔔 **Customizable actions**: from alerts to call termination
+- 📈 **Risk scoring** with weights and multipliers
+- 🔍 **Integration with ElevenLabs Scribe V2** keyterms
 
-## Установка
+## Installation
 
-### Шаг 1: Импорт схемы в Supabase
+### Step 1: Import Schema to Supabase
 
-1. Откройте ваш проект в [Supabase Dashboard](https://app.supabase.com)
-2. Перейдите в **SQL Editor**
-3. Создайте новый запрос
-4. Скопируйте весь SQL из файла со схемой (который вы предоставили)
-5. Выполните запрос
+1. Open your project in [Supabase Dashboard](https://app.supabase.com)
+2. Go to **SQL Editor**
+3. Create a new query
+4. Copy the entire SQL from the schema file (which you provided)
+5. Run the query
 
-Схема создаст:
-- ✅ Таблицу `compliance_rules` с 19 предзаполненными правилами
+The schema will create:
+
+- ✅ Table `compliance_rules` with 19 pre-populated rules
 - ✅ Views: `v_rules_stats`, `v_rules_by_category`, `v_elevenlabs_keyterms`
 - ✅ Functions: `get_elevenlabs_keyterms()`, `get_realtime_rules()`, `increment_rule_trigger()`
-- ✅ RLS (Row Level Security) политики
+- ✅ RLS (Row Level Security) policies
 
-### Шаг 2: Проверка установки
+### Step 2: Verify Installation
 
-Выполните в SQL Editor:
+Run in SQL Editor:
 
 ```sql
--- Проверить количество правил
+-- Check rule count
 SELECT COUNT(*) FROM compliance_rules;
--- Должно вернуть: 19
+-- Should return: 19
 
--- Посмотреть статистику
+-- View statistics
 SELECT * FROM v_rules_stats;
 
--- Посмотреть правила по категориям
+-- View rules by category
 SELECT * FROM v_rules_by_category;
 
--- Получить keyterms для ElevenLabs (максимум 100)
+-- Get keyterms for ElevenLabs (max 100)
 SELECT get_elevenlabs_keyterms(100);
 ```
 
-### Шаг 3: Настройка RLS (если нужно)
+### Step 3: Configure RLS (if needed)
 
-Схема уже включает базовые RLS политики:
-- Authenticated пользователи могут читать правила
-- Service role может делать всё
+The schema already includes basic RLS policies:
 
-Если нужны дополнительные права:
+- Authenticated users can read rules
+- Service role can do everything
+
+If additional permissions are needed:
 
 ```sql
--- Разрешить создание правил для админов
+-- Allow insert for admins
 CREATE POLICY "Allow insert for admins"
 ON compliance_rules FOR INSERT
 TO authenticated
 USING (auth.jwt() ->> 'role' = 'admin');
 
--- Разрешить обновление правил для compliance officers
+-- Allow update for compliance officers
 CREATE POLICY "Allow update for compliance officers"
 ON compliance_rules FOR UPDATE
 TO authenticated
 USING (auth.jwt() ->> 'role' IN ('admin', 'compliance'));
 ```
 
-## Использование
+## Usage
 
-### В интерфейсе
+### In Interface
 
-1. Перейдите на страницу `/dashboard/compliance`
-2. Вы увидите:
-   - **Stats Overview**: Общая статистика по правилам
-   - **Category Breakdown**: Разбивка по категориям
-   - **Quick Actions**: Быстрые действия
-   - **Regulatory Coverage**: Покрытие юрисдикций
-   - **Rules Table**: Детальная таблица всех правил
+1. Go to page `/dashboard/compliance`
+2. You will see:
+   - **Stats Overview**: General rule statistics
+   - **Category Breakdown**: Breakdown by category
+   - **Quick Actions**: Quick actions panel
+   - **Regulatory Coverage**: Jurisdiction coverage
+   - **Rules Table**: Detailed table of all rules
 
-3. Клик по правилу откроет модальное окно с детальной информацией:
-   - Описание и severity
-   - Регуляторная информация
-   - Ключевые слова для детекции
-   - Алерт-сообщения
-   - Статистика срабатываний
+3. Clicking a rule opens a modal with details:
+   - Description and severity
+   - Regulatory info
+   - Detection keywords
+   - Alert messages
+   - Trigger statistics
 
-### В коде
+### In Code
 
 ```typescript
-import { createClient } from '@/lib/supabase-server';
+import { createClient } from "@/lib/supabase-server";
 
-// Получить все активные правила
+// Get all active rules
 const { data: rules } = await supabase
-  .from('compliance_rules')
-  .select('*')
-  .eq('is_active', true)
-  .order('risk_score', { ascending: false });
+  .from("compliance_rules")
+  .select("*")
+  .eq("is_active", true)
+  .order("risk_score", { ascending: false });
 
-// Получить правила по категории
+// Get rules by category
 const { data: insiderRules } = await supabase
-  .from('compliance_rules')
-  .select('*')
-  .eq('category', 'insider_trading');
+  .from("compliance_rules")
+  .select("*")
+  .eq("category", "insider_trading");
 
-// Получить статистику
+// Get statistics
 const { data: stats } = await supabase
-  .from('v_rules_stats')
-  .select('*')
+  .from("v_rules_stats")
+  .select("*")
   .single();
 
-// Инкрементировать счётчик срабатываний
-await supabase.rpc('increment_rule_trigger', {
-  p_rule_code: 'SEC_GUARANTEE_001'
+// Increment trigger counter
+await supabase.rpc("increment_rule_trigger", {
+  p_rule_code: "SEC_GUARANTEE_001",
 });
 ```
 
-### Интеграция с ElevenLabs Scribe V2
+### Integration with ElevenLabs Scribe V2
 
 ```typescript
-// Получить keyterms для отправки в ElevenLabs API
-const { data: keyterms } = await supabase
-  .rpc('get_elevenlabs_keyterms', { max_terms: 100 });
+// Get keyterms to send to ElevenLabs API
+const { data: keyterms } = await supabase.rpc("get_elevenlabs_keyterms", {
+  max_terms: 100,
+});
 
-// Использовать в ElevenLabs API
-const response = await fetch('https://api.elevenlabs.io/v1/scribe', {
-  method: 'POST',
+// Use in ElevenLabs API
+const response = await fetch("https://api.elevenlabs.io/v1/scribe", {
+  method: "POST",
   headers: {
-    'xi-api-key': process.env.ELEVENLABS_API_KEY!,
+    "xi-api-key": process.env.ELEVENLABS_API_KEY!,
   },
   body: JSON.stringify({
     audio: audioBuffer,
-    keyterms: keyterms, // До 100 ключевых фраз
+    keyterms: keyterms, // Up to 100 key phrases
   }),
 });
 ```
 
-## Структура правила
+## Rule Structure
 
-Каждое правило включает:
+Each rule includes:
 
 ```typescript
 {
-  // Идентификация
+  // Identification
   rule_code: "SEC_GUARANTEE_001",
   name: "Prohibited Investment Guarantees",
 
@@ -159,65 +162,69 @@ const response = await fetch('https://api.elevenlabs.io/v1/scribe', {
   severity: "high",
   risk_score: 85,
 
-  // Детекция
+  // Detection
   patterns: ["regex patterns..."],
-  keywords: ["ключевые слова..."],
-  elevenlabs_keyterms: ["фразы для Scribe..."],
+  keywords: ["keywords..."],
+  elevenlabs_keyterms: ["phrases for Scribe..."],
 
-  // Регуляция
+  // Regulation
   jurisdiction: "US",
   regulation_code: "SEC Rule 206(4)-1",
 
-  // Действия
+  // Actions
   primary_action: "warn_agent",
-  alert_message: "Сообщение для агента...",
+  alert_message: "Message for agent...",
 
-  // Аналитика
+  // Analytics
   total_triggers: 0,
   false_positive_count: 0,
 }
 ```
 
-## Категории правил
+## Rule Categories
 
 ### 🚨 Critical Severity
-- **insider_trading**: Обсуждение инсайдерской информации
-- **market_manipulation**: Манипулирование рынком
-- **threat**: Угрозы
+
+- **insider_trading**: Insider information discussion
+- **market_manipulation**: Market manipulation
+- **threat**: Threats
 
 ### ⚠️ High Severity
-- **prohibited_language**: Запрещённые гарантии доходности
-- **pii_disclosure**: Раскрытие персональных данных
-- **pci_violation**: Нарушение PCI DSS (карточные данные)
-- **phi_violation**: Нарушение HIPAA (медицинские данные)
-- **fraud_indicator**: Индикаторы мошенничества
+
+- **prohibited_language**: Prohibited yield guarantees
+- **pii_disclosure**: PII disclosure
+- **pci_violation**: PCI DSS violation (card data)
+- **phi_violation**: HIPAA violation (medical data)
+- **fraud_indicator**: Fraud indicators
 
 ### ⚡ Medium Severity
-- **pressure_sales**: Агрессивные продажи
-- **unsuitable_advice**: Неподходящие рекомендации
-- **off_channel**: Уход в неофициальные каналы
-- **profanity**: Ненормативная лексика
-- **discrimination**: Дискриминация
+
+- **pressure_sales**: High-pressure sales
+- **unsuitable_advice**: Unsuitable recommendations
+- **off_channel**: Moving to unofficial channels
+- **profanity**: Profanity
+- **discrimination**: Discrimination
 
 ### ℹ️ Low Severity
-- **prohibited_language**: Упоминание конкурентов
-- Индикаторы жалоб
-- Раскрытие записи
+
+- **prohibited_language**: Competitor mentions
+- Complaint indicators
+- Recording disclosure
 
 ## Actions
 
-- `alert_only`: Только показать алерт
-- `warn_agent`: Предупредить агента
-- `notify_supervisor`: Уведомить супервайзера
-- `pause_recording`: Приостановить запись (для PCI)
-- `escalate_compliance`: Эскалация в compliance
-- `stop_call`: Рекомендовать прекратить звонок
-- `immediate_review`: Немедленная проверка
-- `auto_flag`: Автоматически пометить
+- `alert_only`: Show alert only
+- `warn_agent`: Warn agent
+- `notify_supervisor`: Notify supervisor
+- `pause_recording`: Pause recording (for PCI)
+- `escalate_compliance`: Escalate to compliance
+- `stop_call`: Recommend ending call
+- `immediate_review`: Immediate review
+- `auto_flag`: Auto flag
 
-## Добавление новых правил
+## Adding New Rules
 
-### Через SQL
+### Via SQL
 
 ```sql
 INSERT INTO compliance_rules (
@@ -236,41 +243,41 @@ INSERT INTO compliance_rules (
 );
 ```
 
-### Через API (будущая функциональность)
+### Via API (Future functionality)
 
 ```typescript
 // POST /api/compliance/rules
-const response = await fetch('/api/compliance/rules', {
-  method: 'POST',
+const response = await fetch("/api/compliance/rules", {
+  method: "POST",
   body: JSON.stringify({
-    rule_code: 'CUSTOM_001',
-    name: 'Custom Rule',
-    // ... остальные поля
+    rule_code: "CUSTOM_001",
+    name: "Custom Rule",
+    // ... other fields
   }),
 });
 ```
 
-## Мониторинг и аналитика
+## Monitoring and Analytics
 
-### Ключевые метрики
+### Key Metrics
 
-- **Total Rules**: Общее количество правил
-- **Active Rules**: Активные правила
-- **Critical/High/Medium/Low**: По severity
-- **Total Triggers**: Количество срабатываний
-- **False Positive Rate**: Процент ложных срабатываний
+- **Total Rules**: Total number of rules
+- **Active Rules**: Active rules
+- **Critical/High/Medium/Low**: By severity
+- **Total Triggers**: Number of triggers
+- **False Positive Rate**: Percentage of false positives
 
-### Экспорт данных
+### Data Export
 
 ```sql
--- Экспорт правил в CSV
+-- Export rules to CSV
 COPY (
   SELECT rule_code, name, category, severity, risk_score, total_triggers
   FROM compliance_rules
   WHERE is_active = true
 ) TO '/tmp/compliance_rules.csv' WITH CSV HEADER;
 
--- Отчёт по срабатываниям
+-- Trigger report
 SELECT
   category,
   severity,
@@ -285,27 +292,29 @@ ORDER BY total_triggers DESC;
 
 ## Troubleshooting
 
-### Не отображаются правила
+### Rules not showing
 
-1. Проверьте, что схема импортирована:
+1. Check that schema is imported:
+
    ```sql
    SELECT COUNT(*) FROM compliance_rules;
    ```
 
-2. Проверьте RLS политики:
+2. Check RLS policies:
+
    ```sql
    SELECT * FROM pg_policies WHERE tablename = 'compliance_rules';
    ```
 
-3. Проверьте, что пользователь авторизован
+3. Ensure user is authenticated
 
-### Ошибка доступа к views
+### Error accessing views
 
-Views требуют тех же прав, что и базовые таблицы. Убедитесь, что RLS правильно настроен.
+Views require same permissions as base tables. Ensure RLS is configured correctly.
 
-### Медленная загрузка
+### Slow loading
 
-Если таблица большая (>10000 правил), добавьте дополнительные индексы:
+If table is large (>10000 rules), add additional indexes:
 
 ```sql
 CREATE INDEX idx_rules_risk_score ON compliance_rules(risk_score DESC);
@@ -314,20 +323,20 @@ CREATE INDEX idx_rules_category_severity ON compliance_rules(category, severity)
 
 ## Roadmap
 
-- [ ] Real-time детекция во время записи
-- [ ] Webhooks для алертов
-- [ ] ML-модели для улучшения детекции
-- [ ] Экспорт отчётов в PDF/Excel
-- [ ] Интеграция с Slack/Teams для уведомлений
-- [ ] Audit log для всех изменений правил
-- [ ] A/B тестирование правил
-- [ ] Автоматическая калибровка thresholds
+- [ ] Real-time detection during recording
+- [ ] Webhooks for alerts
+- [ ] ML models to improve detection
+- [ ] Report export to PDF/Excel
+- [ ] Integration with Slack/Teams for notifications
+- [ ] Audit log for all rule changes
+- [ ] A/B testing for rules
+- [ ] Automatic threshold calibration
 
-## Регуляторная информация
+## Regulatory Info
 
 ### Covered Regulations
 
-- **SEC**: Securities Exchange Commission (США)
+- **SEC**: Securities Exchange Commission (US)
   - Rule 206(4)-1: Investment Adviser Marketing
   - Rule 10b-5: Anti-fraud
   - Rule 17a-4: Recordkeeping
@@ -337,19 +346,20 @@ CREATE INDEX idx_rules_category_severity ON compliance_rules(category, severity)
   - Rule 2210: Communications with the Public
   - Rule 3110: Supervision
 
-- **GDPR**: General Data Protection Regulation (ЕС)
-- **MiFID II**: Markets in Financial Instruments Directive (ЕС)
+- **GDPR**: General Data Protection Regulation (EU)
+- **MiFID II**: Markets in Financial Instruments Directive (EU)
 - **PCI DSS**: Payment Card Industry Data Security Standard
 - **HIPAA**: Health Insurance Portability and Accountability Act
 
 ## Support
 
-Для вопросов и поддержки:
+For questions and support:
+
 - GitHub Issues: [voxguard-ai/issues](https://github.com/yourusername/voxguard-ai/issues)
 - Email: compliance@voxguard.ai
 
 ---
 
-**Создано для:** ElevenLabs Scribe V2 Hackathon
-**Дата:** January 2026
-**Версия:** 1.0.0
+**Created for:** ElevenLabs Scribe V2 Hackathon
+**Date:** January 2026
+**Version:** 1.0.0

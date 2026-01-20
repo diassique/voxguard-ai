@@ -1,27 +1,30 @@
 # WebSocket Integration for ElevenLabs Scribe v2
 
-## ✅ Установленные компоненты
+## ✅ Installed Components
 
-Вся инфраструктура для работы с WebSocket и ElevenLabs Scribe v2 установлена и готова к использованию.
+The entire infrastructure for WebSocket and ElevenLabs Scribe v2 is installed and ready for use.
 
-## 📦 Установленные пакеты
+## 📦 Installed Packages
 
-- `ws` - WebSocket библиотека для Node.js
-- `@types/ws` - TypeScript типы для ws
+- `ws` - WebSocket library for Node.js
+- `@types/ws` - TypeScript types for ws
 
-## 🗂️ Созданные файлы
+## 🗂️ Created Files
 
-### 1. **React Hook для записи**
+### 1. **React Hook for Recording**
+
 [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts)
 
-Кастомный хук для работы с ElevenLabs Scribe WebSocket API:
-- Подключение к WebSocket
-- Запись аудио с микрофона
-- Real-time транскрипция
-- Обработка частичных и финальных транскриптов
-- Автоматическая конвертация аудио в формат PCM16
+Custom hook to work with ElevenLabs Scribe WebSocket API:
 
-**Использование:**
+- Connects to WebSocket
+- Records audio from microphone
+- Real-time transcription
+- Handles partial and finalized transcripts
+- Automatic audio conversion to PCM16 format
+
+**Usage:**
+
 ```typescript
 const {
   isConnected,
@@ -38,77 +41,83 @@ const {
 });
 ```
 
-### 2. **Компонент записи**
+### 2. **Recording Component**
+
 [src/components/ScribeRecorder.tsx](src/components/ScribeRecorder.tsx)
 
-UI компонент с полным функционалом:
-- Кнопка записи/остановки
-- Отображение real-time транскрипции
-- Показ финальных транскриптов
-- Обработка ошибок
-- Статистика (количество слов, сегментов)
+UI component with full functionality:
 
-### 3. **API Route для генерации токена**
+- Record/stop button
+- Real-time transcription display
+- Display of finalized transcripts
+- Error handling
+- Statistics (word count, segment count)
+
+### 3. **API Route for Token Generation**
+
 [src/app/api/elevenlabs-token/route.ts](src/app/api/elevenlabs-token/route.ts)
 
-Защищенный endpoint для генерации одноразовых токенов:
-- Проверка аутентификации через NextAuth
-- Генерирует single-use token через ElevenLabs API
-- Безопасно: API ключ остается на сервере, клиент получает только токен
-- Токен валиден только для одного WebSocket соединения
+Protected endpoint for generating one-time tokens:
 
-### 4. **Интеграция в Recordings Page**
+- Authentication check via NextAuth
+- Generates single-use token via ElevenLabs API
+- Secure: API key remains on the server, client receives only the token
+- Token is valid for only one WebSocket connection
+
+### 4. **Integration in Recordings Page**
+
 [src/app/dashboard/recordings/page.tsx](src/app/dashboard/recordings/page.tsx)
 
-Компонент ScribeRecorder интегрирован в страницу записей.
+The ScribeRecorder component is integrated into the recordings page.
 
-### 5. **Proxy API Route (опционально)**
+### 5. **Proxy API Route (Optional)**
+
 [src/app/api/scribe/route.ts](src/app/api/scribe/route.ts)
 
-Серверный proxy для WebSocket соединений (для будущего использования).
+Server-side proxy for WebSocket connections (for future use).
 
-## ⚙️ Конфигурация
+## ⚙️ Configuration
 
-### Переменные окружения
+### Environment Variables
 
-Добавьте в [.env.local](.env.local):
+Add to [.env.local](.env.local):
 
 ```env
 ELEVENLABS_API_KEY=your_actual_api_key_here
 ```
 
-Файл [.env.local.example](.env.local.example) содержит шаблон.
+The [.env.local.example](.env.local.example) file contains a template.
 
-## 🚀 Как использовать
+## 🚀 How to Use
 
-### Шаг 1: Получите API ключ ElevenLabs
+### Step 1: Get ElevenLabs API Key
 
-1. Зарегистрируйтесь на https://elevenlabs.io
-2. Перейдите в Settings → API Keys
-3. Создайте новый API ключ
-4. Скопируйте ключ
+1. Register at https://elevenlabs.io
+2. Go to Settings → API Keys
+3. Create a new API key
+4. Copy the key
 
-### Шаг 2: Добавьте API ключ в .env.local
+### Step 2: Add API Key to .env.local
 
 ```bash
 ELEVENLABS_API_KEY=sk_your_actual_elevenlabs_api_key
 ```
 
-### Шаг 3: Запустите приложение
+### Step 3: Run the Application
 
 ```bash
 npm run dev
 ```
 
-### Шаг 4: Протестируйте запись
+### Step 4: Test Recording
 
-1. Откройте http://localhost:3000/dashboard/recordings
-2. Войдите в систему
-3. Нажмите кнопку микрофона
-4. Разрешите доступ к микрофону
-5. Говорите - транскрипция появится в реальном времени!
+1. Open http://localhost:3000/dashboard/recordings
+2. Log in
+3. Click the microphone button
+4. Allow microphone access
+5. Speak - transcription will appear in real-time!
 
-## 🔧 Технические детали
+## 🔧 Technical Details
 
 ### WebSocket Endpoint
 
@@ -116,22 +125,24 @@ npm run dev
 wss://api.elevenlabs.io/v1/speech-to-text/realtime
 ```
 
-**Параметры:**
-- `model_id` - ID модели (**scribe_v2_realtime** - единственная поддерживаемая модель)
-- `commit_strategy` - "manual" или "vad" (voice activity detection)
-- `include_timestamps` - включить временные метки
-- `include_language_detection` - автоопределение языка
-- `sample_rate` - частота дискретизации (16000 рекомендуется)
+**Parameters:**
 
-### Форматы аудио
+- `model_id` - Model ID (**scribe_v2_realtime** - the only supported model)
+- `commit_strategy` - "manual" or "vad" (voice activity detection)
+- `include_timestamps` - include timestamps
+- `include_language_detection` - auto-detect language
+- `sample_rate` - sample rate (16000 recommended)
 
-- **PCM 16kHz** (рекомендуется) - оптимальный баланс качества и пропускной способности
-- Поддерживаются: pcm_8000, pcm_16000, pcm_22050, pcm_24000, pcm_44100, pcm_48000, ulaw_8000
-- Только моно аудио
+### Audio Formats
 
-### Типы сообщений
+- **PCM 16kHz** (recommended) - optimal balance of quality and bandwidth
+- Supported: pcm_8000, pcm_16000, pcm_22050, pcm_24000, pcm_44100, pcm_48000, ulaw_8000
+- Mono audio only
 
-**От клиента к серверу:**
+### Message Types
+
+**Client to Server:**
+
 ```json
 {
   "type": "input_audio_chunk",
@@ -141,64 +152,69 @@ wss://api.elevenlabs.io/v1/speech-to-text/realtime
 }
 ```
 
-**От сервера к клиенту:**
-- `session_started` - соединение установлено
-- `partial_transcript` - промежуточная транскрипция
-- `committed_transcript` - финальная транскрипция
-- `committed_transcript_with_timestamps` - с временными метками
-- `error`, `auth_error`, `quota_exceeded`, `rate_limited` - ошибки
+**Server to Client:**
 
-## 🌍 Региональные серверы
+- `session_started` - connection established
+- `partial_transcript` - intermediate transcription
+- `committed_transcript` - final transcription
+- `committed_transcript_with_timestamps` - with timestamps
+- `error`, `auth_error`, `quota_exceeded`, `rate_limited` - errors
+
+## 🌍 Regional Servers
 
 - **US:** `wss://api.us.elevenlabs.io/v1/speech-to-text/realtime`
 - **EU:** `wss://api.eu.residency.elevenlabs.io/v1/speech-to-text/realtime`
 - **India:** `wss://api.in.residency.elevenlabs.io/v1/speech-to-text/realtime`
 
-## 📊 Особенности Scribe v2
+## 📊 Scribe v2 Features
 
 - ⚡ **Latency:** ~150ms
-- 🌐 **Языки:** 90+ языков, включая English, French, German, Italian, Spanish, Portuguese
-- 🔄 **Автопереключение языка** в середине разговора
-- 🎯 **Предсказание слов** с "negative latency"
-- 📝 **Контекстная транскрипция** с использованием предыдущих батчей
+- 🌐 **Languages:** 90+ languages, including English, French, German, Italian, Spanish, Portuguese
+- 🔄 **Auto-Language Switching** mid-conversation
+- 🎯 **Word Prediction** with "negative latency"
+- 📝 **Contextual Transcription** using previous batches
 
-## 🔐 Безопасность
+## 🔐 Security
 
-- API ключ хранится на сервере (в .env.local) и **никогда не передается клиенту**
-- Сервер генерирует одноразовые токены через ElevenLabs API
-- Клиент использует токен для WebSocket соединения
-- Токен валиден только для одного соединения (single-use)
-- Только авторизованные пользователи могут получить токен
+- API key is stored on the server (in .env.local) and **never transmitted to the client**
+- Server generates one-time tokens via ElevenLabs API
+- Client uses token for WebSocket connection
+- Token is valid for only one connection (single-use)
+- Only authorized users can obtain a token
 
 ## 🐛 Troubleshooting
 
-### Ошибка "No API key available"
-- Проверьте, что `ELEVENLABS_API_KEY` добавлен в .env.local
-- Перезапустите dev сервер
+### Error "No API key available"
 
-### Ошибка "Authentication error"
-- Проверьте корректность API ключа
-- Убедитесь, что у вас есть активная подписка ElevenLabs
+- Check that `ELEVENLABS_API_KEY` is added to .env.local
+- Restart dev server
 
-### Не работает микрофон
-- Разрешите доступ к микрофону в браузере
-- Используйте HTTPS (или localhost для разработки)
+### Error "Authentication error"
 
-### WebSocket не подключается
-- Проверьте интернет-соединение
-- Проверьте firewall настройки
-- Убедитесь, что WebSocket не блокируется прокси
+- Check API key correctness
+- Ensure you have an active ElevenLabs subscription
 
-## 📚 Источники
+### Microphone not working
+
+- Allow microphone access in the browser
+- Use HTTPS (or localhost for development)
+
+### WebSocket not connecting
+
+- Check internet connection
+- Check firewall settings
+- Ensure WebSocket is not blocked by proxy
+
+## 📚 Resources
 
 - [ElevenLabs Scribe v2 Realtime API](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime)
 - [Realtime Speech to Text Cookbook](https://elevenlabs.io/docs/cookbooks/speech-to-text/streaming)
 - [Next.js WebSocket Integration Guide](https://github.com/vercel/next.js/discussions/14950)
 
-## 🎯 Следующие шаги
+## 🎯 Next Steps
 
-1. ✅ WebSocket инфраструктура готова
-2. 🔄 Добавить сохранение транскриптов в Supabase
-3. 🔄 Добавить анализ токсичности/угроз на транскриптах
-4. 🔄 Добавить экспорт записей в различных форматах
-5. 🔄 Добавить историю записей с поиском
+1. ✅ WebSocket infrastructure ready
+2. 🔄 Add transcript saving to Supabase
+3. 🔄 Add toxicity/threat analysis on transcripts
+4. 🔄 Add recording export in various formats
+5. 🔄 Add recording history with search

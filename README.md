@@ -1,36 +1,153 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# VoxGuard AI 🛡️
 
-## Getting Started
+![Status](https://img.shields.io/badge/Status-Production%20Ready-success)
+![Next.js](https://img.shields.io/badge/Next.js-15.1-black)
+![Supabase](https://img.shields.io/badge/Supabase-Database-green)
+![ElevenLabs](https://img.shields.io/badge/ElevenLabs-Scribe%20V2-orange)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
-First, run the development server:
+**VoxGuard AI** is an advanced **real-time voice security and compliance monitoring system**. It leverages **ElevenLabs Scribe V2** and **Supabase** to transcribe calls instantly, detect regulatory violations (SEC, GDPR, HIPAA), and protect sensitive data in real-time.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Designed for call centers, financial institutions, and support teams where compliance is non-negotiable.
+
+---
+
+## 🚀 Key Features
+
+### 🎙️ Real-time Transcription Engine
+
+- **Scribe V2 Integration**: Powered by ElevenLabs' latest low-latency speech-to-text model.
+- **AudioWorklet Architecture**: Modern, non-blocking audio processing for glitch-free streaming.
+- **Smart Resilience**: Auto-reconnection with exponential backoff and connection state management.
+- **Advanced Audio Processing**: Built-in echo cancellation, noise suppression, and auto-gain control.
+
+### 🛡️ Intelligent Compliance Core
+
+- **Instant Violation Detection**: Checks every speech segment against 19+ regulatory rules (SEC, FINRA, PCI-DSS) in <10ms.
+- **Regex & Keyword Matching**: Powerful pattern matching engine for complex rule definitions.
+- **Severity Levels**: Granular alerting system (Critical 🚨, High ⚠️, Medium ⚡, Low ℹ️).
+- **Visual Feedback**:
+  - **Toast Notifications**: Immediate alerts for operators.
+  - **Inline Highlighting**: Transcript segments turn Red/Yellow based on risk.
+  - **Badges**: Clear visual markers for violations.
+
+### 🧠 Advanced Analysis
+
+- **Sentiment Analysis**: Real-time emotion detection (Positive 😊, Neutral 😐, Negative 😟).
+- **Language Detection**: Automatic language identification with confidence scores.
+- **Profanity Masking**: Auto-masking of inappropriate language for professional environments.
+- **Custom Vocabulary**: Enhanced recognition for specific compliance terms (e.g., "GDPR", "HIPAA").
+
+### 📊 Comprehensive Dashboard
+
+- **Live Monitoring**: Watch transcripts and alerts flow in real-time.
+- **Risk Scoring**: Automated risk assessment for every call.
+- **Audit Trails**: Full history of transcripts, alerts, and metadata stored securely in Supabase.
+- **Waveform Visualization**: Interactive audio visualization during recording.
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+graph LR
+    User[User/Microphone] -->|Audio Stream| Client[VoxGuard Client]
+    Client -->|WebSocket| ElevenLabs[Scribe V2 API]
+    ElevenLabs -->|Transcripts| Client
+    Client -->|Segments| Compliance[Compliance Engine]
+    Compliance -->|Violations?| Alerts[UI Alerts]
+    Client -->|Persist| Supabase[(Supabase DB)]
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🛠️ Technology Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Frontend**: [Next.js 15](https://nextjs.org/) (App Router), [React 19](https://react.dev/)
+- **Styling**: [Tailwind CSS 4](https://tailwindcss.com/), [Lucide React](https://lucide.dev/) (Icons)
+- **Backend & DB**: [Supabase](https://supabase.com/) (PostgreSQL, Realtime, Auth)
+- **AI / ML**: [ElevenLabs Scribe V2](https://elevenlabs.io/) (Speech-to-Text)
+- **Audio**: Web Audio API (AudioWorklet), WaveSurfer
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 🚦 Getting Started
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Prerequisites
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Node.js 20+
+- NPM or Yarn
+- A [Supabase](https://supabase.com/) project
+- An [ElevenLabs](https://elevenlabs.io/) API Key
 
-## Deploy on Vercel
+### Installation
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1.  **Clone the repository**
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+    ```bash
+    git clone https://github.com/diassique/voxguard-ai.git
+    cd voxguard-ai
+    ```
+
+2.  **Install dependencies**
+
+    ```bash
+    npm install
+    ```
+
+3.  **Environment Setup**
+    Create a `.env.local` file in the root directory:
+
+    ```env
+    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+    ELEVENLABS_API_KEY=your_elevenlabs_api_key
+    ```
+
+4.  **Database Migration**
+    Run the SQL scripts provided in `supabase/` or `COMPLIANCE_SETUP.md` in your Supabase SQL Editor to set up the necessary tables (`call_transcripts`, `compliance_rules`, `compliance_alerts`).
+
+5.  **Run Development Server**
+    ```bash
+    npm run dev
+    ```
+    Open [http://localhost:3000](http://localhost:3000) to view the app.
+
+---
+
+## 📚 Documentation
+
+Detailed documentation for specific modules:
+
+- [**Compliance Setup**](COMPLIANCE_SETUP.md): Guide to setting up rules, regex patterns, and database schemas.
+- [**Real-time Compliance**](REALTIME_COMPLIANCE.md): Deep dive into the real-time detection logic.
+- [**WebSocket Architecture**](PRODUCTION_READY.md): Technical details on the AudioWorklet and robust WebSocket implementation.
+- [**Scribe V2 Features**](SCRIBE_V2_ENHANCEMENTS.md): Overview of new API features like sentiment analysis and automatic language detection.
+
+---
+
+## 🛡️ Compliance Rules (Out-of-the-Box)
+
+VoxGuard comes pre-configured with rules for:
+
+- **SEC/FINRA**: Insider trading, market manipulation, promissory statements.
+- **GDPR/PII**: Credit card numbers, social security numbers, sensitive personal data.
+- **Conduct**: Harassment, threats, profanity.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please examine the `CONTRIBUTING.md` (if available) or submit a Pull Request.
+
+1.  Fork the Project
+2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3.  Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4.  Push to the Branch (`git push origin feature/AmazingFeature`)
+5.  Open a Pull Request
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.

@@ -1,21 +1,21 @@
 # Animation Components
 
-Переиспользуемые компоненты с анимациями для VoxGuard AI.
+Reusable animation components for VoxGuard AI.
 
 ## ComplianceAlertBadge
 
-Анимированный badge для отображения предупреждений о нарушениях соответствия требованиям.
+Animated badge for displaying compliance alerts.
 
-### Особенности анимации
+### Animation Features
 
-1. **Pulse Effect (Пульсация)** - Badge плавно меняет прозрачность
-2. **Ping Ring (Волны)** - Расширяющиеся волны от центра
-3. **Bounce (Подпрыгивание)** - Иконка мягко подпрыгивает
+1. **Pulse Effect** - Badge smoothly changes opacity
+2. **Ping Ring** - Expanding waves from center
+3. **Bounce** - Icon gently bounces
 
-### Использование
+### Usage
 
 ```tsx
-import ComplianceAlertBadge from '@/components/animations/ComplianceAlertBadge';
+import ComplianceAlertBadge from "@/components/animations/ComplianceAlertBadge";
 
 <ComplianceAlertBadge
   onClick={(e) => {
@@ -24,30 +24,30 @@ import ComplianceAlertBadge from '@/components/animations/ComplianceAlertBadge';
   }}
 >
   Compliance Alert
-</ComplianceAlertBadge>
+</ComplianceAlertBadge>;
 ```
 
 ### Props
 
-- `onClick` (function): Обработчик клика
-- `children` (ReactNode): Текст badge (по умолчанию: "Compliance Alert")
+- `onClick` (function): Click handler
+- `children` (ReactNode): Badge text (default: "Compliance Alert")
 
-### Психология анимации
+### Animation Psychology
 
-Анимация разработана с учетом психологических принципов:
+Animation is designed with psychological principles in mind:
 
-- **Привлечение внимания**: Движение естественно привлекает взгляд
-- **Создание срочности**: Pulse и ping создают ощущение важности
-- **Приглашение к действию**: Bounce делает элемент "живым"
-- **Без стресса**: Медленные (2s) анимации не раздражают
+- **Attracting Attention**: Motion naturally draws the eye
+- **Creating Urgency**: Pulse and ping create a sense of importance
+- **Invitation to Action**: Bounce makes the element feel "alive"
+- **Stress-free**: Slow (2s) animations are not annoying
 
-### Доступность
+### Accessibility
 
-Компонент автоматически отключает анимации для пользователей с настройкой `prefers-reduced-motion`.
+Component automatically disables animations for users with `prefers-reduced-motion` setting.
 
-### Технические детали
+### Technical Details
 
-- **Duration**: 2 секунды для всех анимаций
+- **Duration**: 2 seconds for all animations
 - **Timing functions**:
   - Pulse: `cubic-bezier(0.4, 0, 0.6, 1)`
   - Ping: `cubic-bezier(0, 0, 0.2, 1)`
@@ -56,9 +56,9 @@ import ComplianceAlertBadge from '@/components/animations/ComplianceAlertBadge';
   - Background: `bg-red-50`
   - Text: `text-red-600`
   - Ring: `bg-red-200`
-- **Hardware acceleration**: Используется `transform` вместо позиционирования
+- **Hardware acceleration**: Uses `transform` instead of positioning
 
-### Визуализация
+### Visualization
 
 ```
       ╭───────────────────────╮
@@ -72,23 +72,25 @@ import ComplianceAlertBadge from '@/components/animations/ComplianceAlertBadge';
          ↕ Badge pulse
 ```
 
-### Примеры использования
+### Usage Examples
 
-#### В транскрипте (текущая реализация)
+#### In Transcript (Current Implementation)
 
 ```tsx
-{transcript.has_alert && (
-  <ComplianceAlertBadge
-    onClick={(e) => {
-      e.stopPropagation();
-      setSelectedTranscriptId(transcript.id);
-      setShowAlertModal(true);
-    }}
-  />
-)}
+{
+  transcript.has_alert && (
+    <ComplianceAlertBadge
+      onClick={(e) => {
+        e.stopPropagation();
+        setSelectedTranscriptId(transcript.id);
+        setShowAlertModal(true);
+      }}
+    />
+  );
+}
 ```
 
-#### Кастомный текст
+#### Custom Text
 
 ```tsx
 <ComplianceAlertBadge onClick={handleClick}>
@@ -96,9 +98,9 @@ import ComplianceAlertBadge from '@/components/animations/ComplianceAlertBadge';
 </ComplianceAlertBadge>
 ```
 
-#### Без анимации (для пользователей с motion sensitivity)
+#### Without Animation (for users with motion sensitivity)
 
-Анимации автоматически отключаются при наличии системной настройки:
+Animations are automatically disabled when system setting is present:
 
 ```css
 @media (prefers-reduced-motion: reduce) {
@@ -106,14 +108,14 @@ import ComplianceAlertBadge from '@/components/animations/ComplianceAlertBadge';
 }
 ```
 
-### Производительность
+### Performance
 
-- Использует CSS animations (GPU-ускоренные)
-- Не влияет на JavaScript event loop
-- Минимальное влияние на battery life
-- Оптимизировано для 60 FPS
+- Uses CSS animations (GPU-accelerated)
+- Does not affect JavaScript event loop
+- Minimal impact on battery life
+- Optimized for 60 FPS
 
-### Совместимость
+### Compatibility
 
 - ✅ Chrome/Edge 88+
 - ✅ Firefox 85+

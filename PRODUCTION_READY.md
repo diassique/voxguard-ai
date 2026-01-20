@@ -1,49 +1,50 @@
 # Production-Ready WebSocket Implementation
 
-## ✅ Обновления для Production
+## ✅ Updates for Production
 
-Система переписана с нуля для production использования.
+System rewritten from scratch for production use.
 
-### 🎯 Что было улучшено:
+### 🎯 Key Improvements:
 
-## 1. **AudioWorkletNode вместо ScriptProcessorNode** ✅
+## 1. **AudioWorkletNode instead of ScriptProcessorNode** ✅
 
-**Проблема:** ScriptProcessorNode deprecated и будет удален из браузеров.
+**Issue:** ScriptProcessorNode is deprecated and will be removed from browsers.
 
-**Решение:** Переписано на современный AudioWorkletNode.
+**Solution:** Rewritten to modern AudioWorkletNode.
 
-### Преимущества:
-- ✅ **Работает в отдельном audio rendering thread** - нет блокировки UI
-- ✅ **Детерминированный тайминг** - никаких пропусков аудио
-- ✅ **Лучшая производительность** - меньше CPU на main thread
-- ✅ **Future-proof** - современный стандарт Web Audio API
+### Benefits:
 
-### Файлы:
+- ✅ **Works in separate audio rendering thread** - no UI blocking
+- ✅ **Deterministic timing** - no audio gaps
+- ✅ **Better performance** - less CPU on main thread
+- ✅ **Future-proof** - modern Web Audio API standard
+
+### Files:
+
 - [public/audio-processor.worklet.js](public/audio-processor.worklet.js) - AudioWorklet processor
-- [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L273-L337) - интеграция
+- [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L273-L337) - integration
 
 ---
 
-## 2. **Auto-Reconnect с Exponential Backoff** ✅
+## 2. **Auto-Reconnect with Exponential Backoff** ✅
 
-**Проблема:** При потере соединения система зависала. **ElevenLabs закрывает WebSocket после отправки commit** (код 1000).
+**Issue:** System hung on connection loss. **ElevenLabs closes WebSocket after sending commit** (code 1000).
 
-**Решение:** Автоматическое переподключение с умной стратегией.
+**Solution:** Automatic reconnection with smart strategy.
 
-### Особенности:
+### Features:
+
 - ✅ **Exponential backoff** - 1s, 2s, 4s, 8s, 16s, 30s (max)
-- ✅ **Настраиваемое количество попыток** (по умолчанию 5)
-- ✅ **Автоматическое переподключение** после остановки записи (ElevenLabs закрывает код 1000/1005)
-- ✅ **Различает intentional vs unexpected disconnect**
-- ✅ **Не пытается переподключиться после явного disconnect()**
-- ✅ **Cleanup только на unmount** - предотвращает лишние переподключения при Fast Refresh
+- ✅ **Configurable attempts** (default 5)
+- ✅ **Auto-reconnect** after recording stop (ElevenLabs closes code 1000/1005)
+- ✅ **Distinguishes intentional vs unexpected disconnect**
+- ✅ **Doesn't try to reconnect after explicit disconnect()**
+- ✅ **Cleanup only on unmount** - prevents extra reconnects on Fast Refresh
 
-### Код:
+### Code:
+
 ```typescript
-const {
-  maxReconnectAttempts = 5,
-  reconnectDelay = 1000,
-} = config;
+const { maxReconnectAttempts = 5, reconnectDelay = 1000 } = config;
 
 // Exponential backoff
 const getReconnectDelay = (attempt: number) => {
@@ -51,39 +52,42 @@ const getReconnectDelay = (attempt: number) => {
 };
 ```
 
-Логика: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L176-L205)
+Logic: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L176-L205)
 
 ---
 
 ## 3. **Connection State Management** ✅
 
-**Проблема:** Пользователь не видел, что происходит с соединением.
+**Issue:** User didn't know connection status.
 
-**Решение:** Детальные состояния подключения.
+**Solution:** Detailed connection states.
 
-### Состояния:
-- `disconnected` - не подключено
-- `connecting` - идет подключение (показывается спиннер)
-- `connected` - успешно подключено
-- `error` - ошибка подключения
+### States:
 
-### UI индикация:
-- 🟢 Зеленая точка - connected
-- 🟡 Желтая точка (пульсирует) - connecting
-- 🔴 Красная точка - error
-- ⚪ Серая точка - disconnected
+- `disconnected` - not connected
+- `connecting` - connecting (spinner shown)
+- `connected` - successfully connected
+- `error` - connection error
 
-Код: [src/components/ScribeRecorder.tsx](src/components/ScribeRecorder.tsx#L73-L86)
+### UI Indication:
+
+- 🟢 Green dot - connected
+- 🟡 Yellow dot (pulsing) - connecting
+- 🔴 Red dot - error
+- ⚪ Gray dot - disconnected
+
+Code: [src/components/ScribeRecorder.tsx](src/components/ScribeRecorder.tsx#L73-L86)
 
 ---
 
-## 4. **Предотвращение двойного подключения в React Strict Mode** ✅
+## 4. **Prevent Double Connection in React Strict Mode** ✅
 
-**Проблема:** В dev mode React монтирует компоненты дважды, создавая 2 WebSocket соединения.
+**Issue:** In dev mode React mounts components twice, creating 2 WebSocket connections.
 
-**Решение:** Cleanup функция с флагом `cancelled`.
+**Solution:** Cleanup function with `cancelled` flag.
 
-### Код:
+### Code:
+
 ```typescript
 useEffect(() => {
   let cancelled = false;
@@ -97,138 +101,151 @@ useEffect(() => {
   initConnection();
 
   return () => {
-    cancelled = true; // Предотвращает второе подключение
+    cancelled = true; // Prevents second connection
   };
 }, []);
 ```
 
-Код: [src/components/ScribeRecorder.tsx](src/components/ScribeRecorder.tsx#L32-L47)
+Code: [src/components/ScribeRecorder.tsx](src/components/ScribeRecorder.tsx#L32-L47)
 
 ---
 
-## 5. **Проверка существующего соединения** ✅
+## 5. **Existing Connection Check** ✅
 
-**Проблема:** Множественные вызовы `connect()` создавали конфликты.
+**Issue:** Multiple `connect()` calls created conflicts.
 
-**Решение:** Проверка состояния WebSocket перед подключением.
+**Solution:** Check WebSocket state before connecting.
 
 ```typescript
-if (wsRef.current?.readyState === WebSocket.CONNECTING ||
-    wsRef.current?.readyState === WebSocket.OPEN) {
+if (
+  wsRef.current?.readyState === WebSocket.CONNECTING ||
+  wsRef.current?.readyState === WebSocket.OPEN
+) {
   console.log("⚠️ Already connected or connecting");
   return;
 }
 ```
 
-Код: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L63-L68)
+Code: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L63-L68)
 
 ---
 
-## 6. **Улучшенная обработка ошибок** ✅
+## 6. **Improved Error Handling** ✅
 
 ### Network Errors:
-- ✅ Timeout при fetch токена
+
+- ✅ Timeout on token fetch
 - ✅ HTTP errors (401, 500, etc)
 - ✅ WebSocket connection errors
 - ✅ AudioWorklet loading errors
 
 ### Recovery:
-- ✅ Auto-retry на network errors
-- ✅ Graceful degradation
-- ✅ Понятные сообщения пользователю
 
-### Try-Catch блоки:
-- `connect()` - обрабатывает ошибки токена и WebSocket
-- `sendAudioChunk()` - обрабатывает ошибки отправки
-- `startRecording()` - обрабатывает ошибки микрофона и AudioWorklet
-- Message parsing - обрабатывает невалидный JSON
+- ✅ Auto-retry on network errors
+- ✅ Graceful degradation
+- ✅ Clear user messages
+
+### Try-Catch blocks:
+
+- `connect()` - handles token and WebSocket errors
+- `sendAudioChunk()` - handles send errors
+- `startRecording()` - handles mic and AudioWorklet errors
+- Message parsing - handles invalid JSON
 
 ---
 
-## 7. **Улучшенные настройки микрофона** ✅
+## 7. **Improved Microphone Settings** ✅
 
-**Добавлено:**
+**Added:**
+
 ```typescript
 {
   audio: {
     sampleRate: 16000,
     channelCount: 1,
-    echoCancellation: true,    // Подавление эха
-    noiseSuppression: true,    // Шумоподавление
-    autoGainControl: true,     // Автоматическая регулировка громкости
+    echoCancellation: true,    // Echo cancellation
+    noiseSuppression: true,    // Noise suppression
+    autoGainControl: true,     // Automatic gain control
   }
 }
 ```
 
-Код: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L284-L292)
+Code: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L284-L292)
 
 ---
 
-## 8. **Правильный Cleanup** ✅
+## 8. **Proper Cleanup** ✅
 
-**Что очищается:**
-- ✅ WebSocket соединение
+**What gets cleaned:**
+
+- ✅ WebSocket connection
 - ✅ AudioContext
 - ✅ AudioWorkletNode
-- ✅ MediaStream (микрофон)
-- ✅ Reconnect таймеры
+- ✅ MediaStream (mic)
+- ✅ Reconnect timers
 
-**Когда:**
-- При unmount компонента
-- При остановке записи
-- При ошибках
+**When:**
 
-Код: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L376-L383)
+- On component unmount
+- On recording stop
+- On errors
+
+Code: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L376-L383)
 
 ---
 
 ## 9. **Real-time Partial Transcripts** ✅
 
-**Проблема:** Partial transcripts отправлялись ElevenLabs, но не отображались в UI, поле было `undefined`.
+**Issue:** Partial transcripts were sent by ElevenLabs but not shown in UI, field was `undefined`.
 
-**Решение:** ElevenLabs использует поле `text` вместо `partial_transcript` в сообщениях типа `partial_transcript`.
+**Solution:** ElevenLabs uses `text` field instead of `partial_transcript` in `partial_transcript` type messages.
 
-### Как работает:
+### How It Works:
 
 **1. Partial Transcripts (Real-time):**
-- Приходят **во время** вашей речи
-- Отображаются в желтом окне "Real-time (partial)"
-- Постоянно обновляются по мере накопления слов
-- Используют поле `message.text`
+
+- Arrive **during** your speech
+- Shown in yellow "Real-time (partial)" window
+- Constantly update as words accumulate
+- Use `message.text` field
 
 **2. Committed Transcripts (Final):**
-- Приходят **после** паузы (VAD определяет конец фразы)
-- Отображаются в зеленом окне "Transcription"
-- Финальная, подтвержденная версия
-- Также используют `message.text`
 
-### Код:
+- Arrive **after** pause (VAD detects end of phrase)
+- Shown in green "Transcription" window
+- Final, confirmed version
+- Also use `message.text`
+
+### Code:
+
 ```typescript
 case "partial_transcript":
-  // ElevenLabs использует message.text, не message.partial_transcript
+  // ElevenLabs uses message.text, not message.partial_transcript
   setPartialTranscript(message.text || message.partial_transcript || "");
   break;
 ```
 
-Код: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L130-L132)
+Code: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L130-L132)
 
 ---
 
-## 10. **Silent Error Handler для WebSocket** ✅
+## 10. **Silent Error Handler for WebSocket** ✅
 
-**Проблема:** Next.js Console Error при попытке логировать WebSocket error event.
+**Issue:** Next.js Console Error when attempting to log WebSocket error event.
 
-**Причина:**
-- WebSocket `error` event не содержит полезной информации
-- Это просто сигнал, что что-то пошло не так
-- Все детали (код ошибки, причина) приходят в `close` event
-- Попытка сериализовать Event объект вызывает ошибки в Next.js
+**Reason:**
 
-**Решение:** Передовой подход - silent error handler
+- WebSocket `error` event contains no useful info
+- It's just a signal that something went wrong
+- All details (error code, reason) come in `close` event
+- Attempting to serialize Event object causes errors in Next.js
 
-### Как работает:
+**Solution:** Best practice - silent error handler
+
+### How It Works:
 
 **1. Error Event Handler (silent):**
+
 ```typescript
 ws.addEventListener("error", () => {
   // NO logging here - error event doesn't contain useful info
@@ -238,10 +255,12 @@ ws.addEventListener("error", () => {
 });
 ```
 
-**2. Close Event Handler (с детальным логированием):**
+**2. Close Event Handler (with detailed logging):**
+
 ```typescript
 ws.addEventListener("close", (event) => {
-  const isError = !event.wasClean || (event.code !== 1000 && event.code !== 1005);
+  const isError =
+    !event.wasClean || (event.code !== 1000 && event.code !== 1005);
 
   if (isError) {
     console.error("❌ WebSocket closed with error", {
@@ -256,38 +275,40 @@ ws.addEventListener("close", (event) => {
 });
 ```
 
-### Преимущества:
-- ✅ Нет ошибок сериализации в Next.js консоли
-- ✅ Более информативное логирование (код + причина из close event)
-- ✅ Разделение нормального закрытия и ошибок
-- ✅ Чистая консоль без красных ошибок
+### Benefits:
 
-Код: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L190-L217)
+- ✅ No serialization errors in Next.js console
+- ✅ More informative logging (code + reason from close event)
+- ✅ Separation of normal closure and errors
+- ✅ Clean console without red errors
+
+Code: [src/hooks/useScribeRecording.ts](src/hooks/useScribeRecording.ts#L190-L217)
 
 ---
 
-## 📊 Сравнение: До vs После
+## 📊 Comparison: Before vs After
 
-| Функция | Старая версия | Production версия |
-|---------|---------------|-------------------|
-| **Audio API** | ScriptProcessorNode (deprecated) | AudioWorkletNode (modern) |
-| **Reconnect** | ❌ Нет | ✅ Exponential backoff |
-| **Connection States** | ❌ Только boolean | ✅ 4 состояния |
-| **React Strict Mode** | ❌ Двойное подключение | ✅ Исправлено |
-| **Error Recovery** | ❌ Минимальная | ✅ Полная |
-| **Network Issues** | ❌ Зависает | ✅ Auto-retry |
-| **Audio Quality** | ⚠️ Базовая | ✅ Noise suppression |
-| **Cleanup** | ⚠️ Частичная | ✅ Полная |
-| **User Feedback** | ⚠️ Минимальный | ✅ Детальный |
-| **Real-time Transcripts** | ❌ Не работали | ✅ Работают (message.text) |
+| Feature                   | Old Version                      | Production Version        |
+| ------------------------- | -------------------------------- | ------------------------- |
+| **Audio API**             | ScriptProcessorNode (deprecated) | AudioWorkletNode (modern) |
+| **Reconnect**             | ❌ None                          | ✅ Exponential backoff    |
+| **Connection States**     | ❌ Boolean only                  | ✅ 4 states               |
+| **React Strict Mode**     | ❌ Double connection             | ✅ Fixed                  |
+| **Error Recovery**        | ❌ Minimal                       | ✅ Complete               |
+| **Network Issues**        | ❌ Hanged                        | ✅ Auto-retry             |
+| **Audio Quality**         | ⚠️ Basic                         | ✅ Noise suppression      |
+| **Cleanup**               | ⚠️ Partial                       | ✅ Complete               |
+| **User Feedback**         | ⚠️ Minimal                       | ✅ Detailed               |
+| **Real-time Transcripts** | ❌ Didn't work                   | ✅ Working (message.text) |
 
 ---
 
 ## 🎯 Production Checklist
 
-### ✅ Готово:
-- [x] AudioWorkletNode вместо ScriptProcessorNode
-- [x] Auto-reconnect с exponential backoff
+### ✅ Done:
+
+- [x] AudioWorkletNode instead of ScriptProcessorNode
+- [x] Auto-reconnect with exponential backoff
 - [x] Connection state management
 - [x] React Strict Mode fix
 - [x] Duplicate connection prevention
@@ -296,50 +317,54 @@ ws.addEventListener("close", (event) => {
 - [x] Enhanced microphone settings
 - [x] User feedback (connection status)
 - [x] Network error recovery
-- [x] Real-time partial transcripts (используют `message.text` вместо `message.partial_transcript`)
-- [x] Safe WebSocket closure (проверка readyState, try-catch)
-- [x] Next.js console error fix (silent error handler, логирование только в close event)
-- [x] Production-grade error handling (разделение нормального закрытия и ошибок)
+- [x] Real-time partial transcripts (use `message.text` instead of `message.partial_transcript`)
+- [x] Safe WebSocket closure (readyState check, try-catch)
+- [x] Next.js console error fix (silent error handler, log only in close event)
+- [x] Production-grade error handling (separation of normal closure and errors)
 
-### 🔜 Рекомендуется добавить:
+### 🔜 Recommended to Add:
+
 - [ ] Error tracking (Sentry/LogRocket)
 - [ ] Analytics/Metrics (Amplitude/Mixpanel)
-- [ ] E2E тесты (Playwright/Cypress)
-- [ ] Unit тесты (Jest/Vitest)
+- [ ] E2E tests (Playwright/Cypress)
+- [ ] Unit tests (Jest/Vitest)
 - [ ] Performance monitoring
-- [ ] Rate limiting на клиенте
+- [ ] Rate limiting on client
 - [ ] Offline mode detection
 
-### 💡 Опционально:
-- [ ] WebRTC для peer-to-peer (если нужно)
+### 💡 Optional:
+
+- [ ] WebRTC for peer-to-peer (if needed)
 - [ ] Audio visualization
 - [ ] Recording pause/resume
 - [ ] Audio playback preview
 
 ---
 
-## 🚀 Deployment Готовность
+## 🚀 Deployment Readiness
 
-### Браузеры:
+### Browsers:
+
 - ✅ Chrome 66+ (AudioWorklet support)
 - ✅ Firefox 76+
 - ✅ Safari 14.1+
 - ✅ Edge 79+
 
 ### Hosting:
-- ✅ **Vercel** - работает (но не serverless WebSocket)
-- ✅ **Netlify** - работает
-- ✅ **AWS/GCP/Azure** - работает
-- ✅ **Docker** - работает
 
-**Примечание:** WebSocket подключение идет напрямую к ElevenLabs, поэтому хостинг не критичен.
+- ✅ **Vercel** - works (but not serverless WebSocket)
+- ✅ **Netlify** - works
+- ✅ **AWS/GCP/Azure** - works
+- ✅ **Docker** - works
+
+**Note:** WebSocket connection goes directly to ElevenLabs, so hosting provider is not critical.
 
 ---
 
-## 📖 Использование
+## 📖 Usage
 
 ```typescript
-import { useScribeRecording } from '@/hooks/useScribeRecording';
+import { useScribeRecording } from "@/hooks/useScribeRecording";
 
 const MyComponent = () => {
   const {
@@ -354,41 +379,41 @@ const MyComponent = () => {
     startRecording,
     stopRecording,
   } = useScribeRecording({
-    modelId: 'scribe_v2_realtime',
+    modelId: "scribe_v2_realtime",
     sampleRate: 16000,
-    commitStrategy: 'vad',
+    commitStrategy: "vad",
     maxReconnectAttempts: 5,
     reconnectDelay: 1000,
   });
 
-  // Использование...
+  // Usage...
 };
 ```
 
 ---
 
-## 🔒 Безопасность
+## 🔒 Security
 
-- ✅ API ключ на сервере
+- ✅ API key on server
 - ✅ Single-use tokens
-- ✅ NextAuth авторизация
+- ✅ NextAuth authorization
 - ✅ HTTPS only
 - ✅ Secure WebSocket (wss://)
 
 ---
 
-## 📚 Документация
+## 📚 Documentation
 
-- [WEBSOCKET_SETUP.md](WEBSOCKET_SETUP.md) - основная документация
+- [WEBSOCKET_SETUP.md](WEBSOCKET_SETUP.md) - main documentation
 - [WEBSOCKET_DEBUG.md](WEBSOCKET_DEBUG.md) - troubleshooting
-- **PRODUCTION_READY.md** (этот файл) - production changes
+- **PRODUCTION_READY.md** (this file) - production changes
 
 ---
 
-## ✨ Итог
+## ✨ Summary
 
-**Система готова к production!**
+**System is Production Ready!**
 
-Все критические проблемы решены, добавлены необходимые защиты и обработки ошибок.
+All critical issues resolved, necessary protections and error handling added.
 
-Можно уверенно запускать для реальных пользователей. 🚀
+Can be confidently launched for real users. 🚀

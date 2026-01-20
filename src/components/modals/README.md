@@ -1,16 +1,16 @@
 # Modal Components
 
-Переиспользуемые модальные компоненты для VoxGuard AI.
+Reusable modal components for VoxGuard AI.
 
 ## BaseModal
 
-Базовый wrapper-компонент для создания модальных окон с единообразным дизайном.
+A base wrapper component for creating modals with a consistent design.
 
-### Использование
+### Usage
 
 ```tsx
-import BaseModal from '@/components/modals/BaseModal';
-import { AlertTriangle } from 'lucide-react';
+import BaseModal from "@/components/modals/BaseModal";
+import { AlertTriangle } from "lucide-react";
 
 <BaseModal
   isOpen={isOpen}
@@ -25,79 +25,79 @@ import { AlertTriangle } from 'lucide-react';
   maxWidth="3xl"
 >
   {/* Modal content */}
-</BaseModal>
+</BaseModal>;
 ```
 
 ### Props
 
-- `isOpen` (boolean): Открыта ли модалка
-- `onClose` (function): Callback при закрытии
-- `title` (string): Заголовок модалки
-- `subtitle?` (string): Подзаголовок (опционально)
-- `icon` (LucideIcon): Иконка в заголовке
-- `iconBgColor?` (string): Цвет фона иконки (по умолчанию: 'bg-red-100')
-- `iconColor?` (string): Цвет иконки (по умолчанию: 'text-red-600')
-- `children` (ReactNode): Контент модалки
-- `loading?` (boolean): Показывать ли состояние загрузки
-- `loadingText?` (string): Текст при загрузке
-- `footer?` (ReactNode): Футер модалки (опционально)
-- `maxWidth?` ('sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl'): Максимальная ширина
+- `isOpen` (boolean): Whether modal is open
+- `onClose` (function): Callback on close
+- `title` (string): Modal title
+- `subtitle?` (string): Subtitle (optional)
+- `icon` (LucideIcon): Icon in header
+- `iconBgColor?` (string): Icon background color (default: 'bg-red-100')
+- `iconColor?` (string): Icon color (default: 'text-red-600')
+- `children` (ReactNode): Modal content
+- `loading?` (boolean): Whether to show loading state
+- `loadingText?` (string): Text during loading
+- `footer?` (ReactNode): Modal footer (optional)
+- `maxWidth?` ('sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl'): Max width
 
 ## ComplianceRuleDetailsModal
 
-Модалка для отображения детальной информации о правиле соответствия.
+Modal for displaying detailed compliance rule information.
 
-### Использование
+### Usage
 
 ```tsx
-import ComplianceRuleDetailsModal from '@/components/modals/ComplianceRuleDetailsModal';
+import ComplianceRuleDetailsModal from "@/components/modals/ComplianceRuleDetailsModal";
 
 <ComplianceRuleDetailsModal
   isOpen={!!selectedRule}
   onClose={() => setSelectedRule(null)}
   rule={selectedRule}
-/>
+/>;
 ```
 
 ### Props
 
-- `isOpen` (boolean): Открыта ли модалка
-- `onClose` (function): Callback при закрытии
-- `rule` (ComplianceRule | null): Правило для отображения
+- `isOpen` (boolean): Whether modal is open
+- `onClose` (function): Callback on close
+- `rule` (ComplianceRule | null): Rule to display
 
 ## ComplianceAlertModal
 
-Модалка для отображения предупреждений о несоответствии требованиям.
+Modal for displaying compliance alerts.
 
-### Использование
+### Usage
 
 ```tsx
-import ComplianceAlertModal from '@/components/ComplianceAlertModal';
+import ComplianceAlertModal from "@/components/ComplianceAlertModal";
 
 <ComplianceAlertModal
   isOpen={isOpen}
   onClose={handleClose}
   sessionId={sessionId}
   transcriptId={transcriptId}
-/>
+/>;
 ```
 
 ### Props
 
-- `isOpen` (boolean): Открыта ли модалка
-- `onClose` (function): Callback при закрытии
-- `sessionId` (string): ID сессии
-- `transcriptId?` (string): ID транскрипта (опционально)
+- `isOpen` (boolean): Whether modal is open
+- `onClose` (function): Callback on close
+- `sessionId` (string): Session ID
+- `transcriptId?` (string): Transcript ID (optional)
 
-## Структура дизайна
+## Design Structure
 
-Все модалки используют единообразную структуру:
+All modals use a consistent structure:
 
-1. **Header** - Заголовок с иконкой и кнопкой закрытия
-2. **Content** - Скроллируемый контент с состоянием загрузки
-3. **Footer** - Опциональный футер с действиями
+1. **Header** - Title with icon and close button
+2. **Content** - Scrollable content with loading state
+3. **Footer** - Optional footer with actions
 
-### Цветовая схема по severity
+### Severity Color Scheme
 
 - **Critical**: `bg-red-50`, `text-red-600`
 - **High**: `bg-orange-50`, `text-orange-600`
