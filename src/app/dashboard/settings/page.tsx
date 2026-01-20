@@ -2,15 +2,42 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "@/components/dashboard/Sidebar";
 import { LogIn } from "lucide-react";
 import { useSidebar } from "@/contexts/SidebarContext";
+import DeleteConfirmModal from "@/components/modals/DeleteConfirmModal";
+import { supabase } from "@/lib/supabase";
 
 export default function SettingsPage() {
-  const { user, loading, refreshSession } = useAuth();
+  const { user, loading, refreshSession, signOut } = useAuth();
   const router = useRouter();
   const { isCollapsed } = useSidebar();
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteAccount = async () => {
+    try {
+      setIsDeleting(true);
+      // Call Supabase RPC to delete the user
+      const { error } = await supabase.rpc('delete_user');
+      
+      if (error) {
+        throw error;
+      }
+      
+      // Sign out and redirect
+      await signOut(); // This cleans up local state
+      router.push("/");
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      alert("Failed to delete account. Please try again.");
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteModalOpen(false); // Close modal whether success or fail (if success we redirect anyway, but good practice)
+    }
+  };
+
 
   // Refresh session on mount
   useEffect(() => {
@@ -149,13 +176,26 @@ export default function SettingsPage() {
                 <h3 className="font-medium text-gray-900">Delete Account</h3>
                 <p className="text-sm text-gray-600">Permanently delete your account and all data</p>
               </div>
-              <button className="px-5 py-2.5 bg-red-600 text-white rounded-full hover:bg-red-700 active:bg-red-800 transition-colors font-medium">
+              <button 
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="px-5 py-2.5 bg-red-600 text-white rounded-full hover:bg-red-700 active:bg-red-800 transition-colors font-medium"
+              >
                 Delete Account
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      <DeleteConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDeleteAccount}
+        title="Delete Account"
+        message="Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently removed."
+        confirmText="Delete Account"
+        isDeleting={isDeleting}
+      />
     </div>
   );
 }
