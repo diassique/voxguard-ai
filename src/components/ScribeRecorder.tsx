@@ -8,11 +8,12 @@ import { toast } from "sonner";
 import {
   createCallSession,
   saveTranscriptSegment,
-  updateSessionLatency,
-  completeCallSession,
   uploadAudioFile,
   processBatchTranscription,
+  loadComplianceRules,
+  checkTextCompliance,
 } from "@/lib/supabase-recording";
+import type { ComplianceRule } from "@/types/compliance.types";
 import {
   Mic,
   Loader2,
@@ -24,6 +25,11 @@ import {
   Save,
   RotateCcw,
   FileText,
+  Bell,
+  AlertTriangle,
+  Smile,
+  Frown,
+  Meh,
 } from "lucide-react";
 
 interface ScribeRecorderProps {
@@ -46,7 +52,12 @@ interface TranscriptSegment {
   words?: TranscriptWord[];
   language?: string;
   confidence?: number;
+  sentiment?: string;
+  sentiment_confidence?: number;
   timestamp: number;
+  hasAlert?: boolean;
+  alertSeverity?: string;
+  alertReason?: string;
 }
 
 interface RecordingData {
@@ -60,6 +71,97 @@ export default function ScribeRecorder({
   onTranscriptComplete,
   onSave,
 }: ScribeRecorderProps) {
+  // State and refs - must be defined before callback
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [finalDuration, setFinalDuration] = useState(0);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
+  const transcriptContainerRef = useRef<HTMLDivElement>(null);
+  const savedSegmentsRef = useRef<Set<string>>(new Set()); // Use segment ID instead of index
+
+  // Track the first ElevenLabs word timestamp to calculate offset
+  const firstElevenLabsTimeRef = useRef<number | null>(null);
+  const firstSegmentReceivedAtRef = useRef<number | null>(null);
+
+  // Compliance rules cache and alert counters
+  const complianceRulesRef = useRef<ComplianceRule[]>([]);
+  const [realtimeAlertCount, setRealtimeAlertCount] = useState(0);
+  const [criticalAlertCount, setCriticalAlertCount] = useState(0);
+  const [segmentAlerts, setSegmentAlerts] = useState<Map<string, { severity: string; reason: string }>>(new Map());
+
+  // Track which segments have been checked for compliance (to prevent duplicate checks in React Strict Mode)
+  const checkedSegmentsRef = useRef<Set<string>>(new Set());
+
+  // 🚨 REAL-TIME COMPLIANCE CHECK CALLBACK
+  // This is called immediately when a segment is received from ElevenLabs
+  const handleSegmentReceived = useCallback(async (segment: {
+    id: string;
+    text: string;
+    words?: unknown[];
+  }) => {
+    // Only check segments with words (final version)
+    if (!segment.words || segment.words.length === 0) {
+      return;
+    }
+
+    // CRITICAL: Prevent duplicate checks (React Strict Mode calls callbacks twice)
+    if (checkedSegmentsRef.current.has(segment.id)) {
+      console.log(`⏭️ [IMMEDIATE] Segment ${segment.id} already checked, skipping duplicate`);
+      return;
+    }
+    checkedSegmentsRef.current.add(segment.id);
+
+    // Check if we have compliance rules loaded
+    if (complianceRulesRef.current.length === 0) {
+      console.warn(`⚠️ No compliance rules loaded for checking`);
+      return;
+    }
+
+    console.log(`🔍 [IMMEDIATE] Checking compliance for segment:`, segment.text);
+    const checkStartTime = performance.now();
+
+    const { violations } = await checkTextCompliance(
+      segment.text,
+      complianceRulesRef.current
+    );
+
+    const checkDuration = performance.now() - checkStartTime;
+    console.log(`⏱️ [IMMEDIATE] Compliance check took ${checkDuration.toFixed(2)}ms`);
+
+    if (violations.length > 0) {
+      console.log(`🚨 [IMMEDIATE] Real-time compliance violation detected:`, violations[0].rule.name);
+
+      // Count critical vs high severity
+      const criticalCount = violations.filter(v => v.rule.severity === 'critical').length;
+      const highCount = violations.filter(v => v.rule.severity === 'high').length;
+
+      // Update counters
+      setRealtimeAlertCount(prev => prev + violations.length);
+      setCriticalAlertCount(prev => prev + criticalCount);
+
+      // Store alert info for this segment (visual only)
+      setSegmentAlerts(prev => {
+        const newMap = new Map(prev);
+        newMap.set(segment.id, {
+          severity: violations[0].rule.severity,
+          reason: violations[0].rule.name
+        });
+        return newMap;
+      });
+
+      // Show toast notification for critical/high alerts
+      if (criticalCount > 0 || highCount > 0) {
+        const severityText = criticalCount > 0 ? 'Critical' : 'High';
+        toast.error(`${severityText} Compliance Alert: ${violations[0].rule.name}`, {
+          duration: 5000,
+          position: 'top-right',
+        });
+      }
+    } else {
+      console.log(`✅ [IMMEDIATE] No compliance violations in segment`);
+    }
+  }, []);
+
   const {
     isRecording,
     partialTranscript,
@@ -80,6 +182,7 @@ export default function ScribeRecorder({
     includeLanguageDetection: true,
     maxReconnectAttempts: 5,
     reconnectDelay: 1000,
+    onSegmentReceived: handleSegmentReceived, // 🚨 Pass callback for immediate compliance checking
   });
 
   const { analysis, connectStream, disconnect: disconnectAnalyzer } = useAudioAnalyzer({
@@ -87,15 +190,15 @@ export default function ScribeRecorder({
     smoothingTimeConstant: 0.8,
   });
 
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
-  const transcriptContainerRef = useRef<HTMLDivElement>(null);
-  const savedSegmentsRef = useRef<Set<number>>(new Set());
-
-  // Track the first ElevenLabs word timestamp to calculate offset
-  const firstElevenLabsTimeRef = useRef<number | null>(null);
-  const firstSegmentReceivedAtRef = useRef<number | null>(null);
+  // Load compliance rules on mount
+  useEffect(() => {
+    const loadRules = async () => {
+      const rules = await loadComplianceRules();
+      complianceRulesRef.current = rules;
+      console.log(`📋 Loaded ${rules.length} compliance rules for real-time checking`);
+    };
+    loadRules();
+  }, []);
 
   // Автоскролл внутри контейнера транскриптов (не на всей странице)
   useEffect(() => {
@@ -114,13 +217,14 @@ export default function ScribeRecorder({
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
     } else {
-      setRecordingDuration(0);
+      // Save final duration when recording stops
+      setFinalDuration(recordingDuration);
     }
 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isRecording]);
+  }, [isRecording, recordingDuration]);
 
   // Подключение анализатора к потоку при записи
   useEffect(() => {
@@ -139,7 +243,12 @@ export default function ScribeRecorder({
   // which causes an infinite reconnect loop if we maintain a persistent connection.
   // Instead, connection is established on-demand when startRecording() is called.
 
-  // Сохранять новые сегменты в БД
+  // NOTE: Segments are NO LONGER saved to DB in real-time
+  // They are now saved ONLY when user clicks "Save" button (along with audio)
+  // This prevents orphaned transcripts in DB without audio files
+
+  /*
+  // OLD CODE: Сохранять новые сегменты в БД (DISABLED - now saves on button click only)
   useEffect(() => {
     if (!currentSessionId) return;
 
@@ -158,14 +267,14 @@ export default function ScribeRecorder({
       // Segment index should be 0-based (length - 1)
       const segmentIndex = committedTranscripts.length - 1;
 
-      // Check if this segment was already saved
-      if (savedSegmentsRef.current.has(segmentIndex)) {
-        console.log(`⚠️ Segment ${segmentIndex} already saved, skipping`);
+      // Check if this segment was already saved (by ID, not index!)
+      if (savedSegmentsRef.current.has(lastSegment.id)) {
+        console.log(`⚠️ Segment ${segmentIndex} (ID: ${lastSegment.id}) already saved, skipping`);
         return;
       }
 
       // Mark as being saved NOW to prevent concurrent saves (React Strict Mode)
-      savedSegmentsRef.current.add(segmentIndex);
+      savedSegmentsRef.current.add(lastSegment.id);
 
       // Calculate start_time and end_time relative to recording start
       // Use the timestamp when we RECEIVED the segment, not ElevenLabs internal timestamps
@@ -240,6 +349,9 @@ export default function ScribeRecorder({
         text: lastSegment.text.substring(0, 30),
       });
 
+      // NOTE: Compliance checking is now handled by onSegmentReceived callback in useScribeRecording
+      // This happens IMMEDIATELY when segment is received, not in this useEffect
+
       // Сохранить в БД
       const saved = await saveTranscriptSegment(
         currentSessionId,
@@ -248,6 +360,12 @@ export default function ScribeRecorder({
         startTime,
         endTime,
         lastSegment.words,
+        {
+          sentiment: lastSegment.sentiment,
+          sentiment_confidence: lastSegment.sentiment_confidence,
+          language_code: lastSegment.language,
+          language_confidence: lastSegment.confidence,
+        }
       );
 
       if (saved) {
@@ -259,24 +377,22 @@ export default function ScribeRecorder({
         }
       } else {
         // If save failed, remove from set so we can retry
-        savedSegmentsRef.current.delete(segmentIndex);
-        console.error(`❌ Failed to save segment ${segmentIndex}, will retry`);
+        savedSegmentsRef.current.delete(lastSegment.id);
+        console.error(`❌ Failed to save segment ${segmentIndex} (ID: ${lastSegment.id}), will retry`);
       }
     };
 
     saveLatestSegment();
   }, [committedTranscripts.length, currentSessionId, recordingStartTime, latencyMetrics.lastLatency]);
+  */
 
   const handleToggleRecording = useCallback(async () => {
     if (isRecording) {
       // STOP recording
       stopRecording();
 
-      // Завершить сессию в БД
-      if (currentSessionId) {
-        await completeCallSession(currentSessionId);
-        console.log('✅ Session completed:', currentSessionId);
-      }
+      // NOTE: Session completion is now handled when user clicks "Save" button
+      // No need to complete session here since it hasn't been created yet
 
       const fullTranscript = committedTranscripts.map((t) => t.text).join(" ");
       if (onTranscriptComplete && fullTranscript) {
@@ -289,14 +405,19 @@ export default function ScribeRecorder({
       // Reset timing refs for new recording
       firstElevenLabsTimeRef.current = null;
       firstSegmentReceivedAtRef.current = null;
+      // Reset compliance counters and tracking
+      setRealtimeAlertCount(0);
+      setCriticalAlertCount(0);
+      setSegmentAlerts(new Map());
+      checkedSegmentsRef.current.clear(); // Clear checked segments for new recording
+      // Reset duration counters
+      setRecordingDuration(0);
+      setFinalDuration(0);
 
-      // Создать сессию в БД
-      const session = await createCallSession();
-      if (session) {
-        setCurrentSessionId(session.id);
-        setRecordingStartTime(Date.now());
-        console.log('✅ Session created:', session.id);
-      }
+      // NOTE: Session is now created only when user clicks "Save" button
+      // This prevents orphaned sessions in DB if user doesn't save the recording
+      setCurrentSessionId(null); // Clear any previous session
+      setRecordingStartTime(Date.now()); // Track when recording started (for timing calculations)
 
       startRecording();
     }
@@ -306,39 +427,163 @@ export default function ScribeRecorder({
     const fullTranscript = committedTranscripts.map((t) => t.text).join(" ");
     const detectedLanguage = committedTranscripts.find((t) => t.language)?.language;
 
-    // Загрузить аудиофайл в Storage
-    if (currentSessionId) {
-      const audioBlob = getAudioBlob();
-      if (audioBlob) {
-        // Step 1: Upload audio
-        const uploadToast = toast.loading("Uploading audio...");
-        const audioUrl = await uploadAudioFile(currentSessionId, audioBlob);
-        toast.dismiss(uploadToast);
+    // 🛡️ VALIDATION: Check recording quality before saving
+    const MIN_DURATION_SECONDS = 1;
+    const MIN_WORD_COUNT = 1;
 
-        if (audioUrl) {
-          console.log("✅ Audio saved to:", audioUrl);
+    // Check minimum duration
+    if (finalDuration < MIN_DURATION_SECONDS) {
+      toast.error("Recording too short", {
+        description: `Minimum recording duration is ${MIN_DURATION_SECONDS} second(s)`,
+      });
+      return;
+    }
 
-          // Step 2: Process batch transcription for accurate timestamps + speaker diarization
-          const processingToast = toast.loading("Processing transcription with speaker detection...");
-          const success = await processBatchTranscription(currentSessionId, audioUrl);
-          toast.dismiss(processingToast);
+    // Check if there are any transcripts
+    if (committedTranscripts.length === 0) {
+      toast.error("No transcription available", {
+        description: "Please record some speech before saving",
+      });
+      return;
+    }
 
-          if (success) {
-            toast.success("Recording saved with speaker identification!");
+    // Check if there are any words
+    const wordCount = fullTranscript.split(" ").filter(Boolean).length;
+    if (wordCount < MIN_WORD_COUNT) {
+      toast.error("No speech detected", {
+        description: "Please speak clearly into the microphone",
+      });
+      return;
+    }
 
-            // Optional: reload the page or redirect to the recording detail page
-            setTimeout(() => {
-              window.location.href = `/dashboard/recordings/${currentSessionId}`;
-            }, 1000);
-          } else {
-            toast.error("Failed to process transcription. Using real-time data.");
+    // Create session and save everything when user clicks Save
+    let sessionId = currentSessionId;
+
+    // If no session exists, create one now (this happens if user never started recording)
+    if (!sessionId) {
+      const session = await createCallSession();
+      if (session) {
+        sessionId = session.id;
+        setCurrentSessionId(session.id);
+      } else {
+        toast.error("Failed to create session");
+        return;
+      }
+    }
+
+    const audioBlob = getAudioBlob();
+    if (audioBlob) {
+      // Step 1: Save all real-time transcript segments to DB
+      const savingToast = toast.loading("Saving transcription...");
+
+      // Calculate timing offset (same logic as the old useEffect)
+      const firstSegmentTimestamp = committedTranscripts.length > 0 ? committedTranscripts[0].timestamp : recordingStartTime;
+      let firstElevenLabsTime: number | null = null;
+
+      // Get first word timestamp
+      if (committedTranscripts.length > 0 && committedTranscripts[0].words && committedTranscripts[0].words.length > 0) {
+        const wordEntries = committedTranscripts[0].words.filter((w: any) => w.type === 'word');
+        if (wordEntries.length > 0) {
+          firstElevenLabsTime = wordEntries[0].start;
+        }
+      }
+
+      // Save all segments
+      for (let i = 0; i < committedTranscripts.length; i++) {
+        const segment = committedTranscripts[i];
+
+        // Skip segments without words
+        if (!segment.words || segment.words.length === 0) continue;
+
+        // Calculate start and end times
+        let startTime = 0;
+        let endTime = 0;
+
+        const wordEntries = segment.words.filter((w: any) => w.type === 'word');
+        if (wordEntries.length > 0 && firstElevenLabsTime !== null) {
+          const firstWordStart = wordEntries[0].start;
+          const lastWordEnd = wordEntries[wordEntries.length - 1].end;
+          const offset = firstElevenLabsTime;
+          startTime = Math.max(0, firstWordStart - offset);
+          endTime = Math.max(0, lastWordEnd - offset);
+        }
+
+        // Save segment to DB
+        await saveTranscriptSegment(
+          sessionId,
+          i,
+          segment.text,
+          startTime,
+          endTime,
+          segment.words,
+          {
+            sentiment: segment.sentiment,
+            sentiment_confidence: segment.sentiment_confidence,
+            language_code: segment.language,
+            language_confidence: segment.confidence,
           }
+        );
+      }
+
+      toast.dismiss(savingToast);
+      console.log(`✅ Saved ${committedTranscripts.length} transcript segments to DB`);
+
+      // Step 2: Upload audio
+      const uploadToast = toast.loading("Uploading audio...");
+      const audioUrl = await uploadAudioFile(sessionId, audioBlob);
+      toast.dismiss(uploadToast);
+
+      if (audioUrl) {
+        console.log("✅ Audio saved to:", audioUrl);
+
+        // Step 3: Process batch transcription for speaker diarization (optional enhancement)
+        const processingToast = toast.loading("Processing speaker identification...");
+        const result = await processBatchTranscription(sessionId, audioUrl);
+        toast.dismiss(processingToast);
+
+        if (!result.success) {
+          // Clean up: delete the session and audio file since transcription failed
+          const supabase = (await import("@/lib/supabase")).createClient();
+
+          // Delete session (this will cascade delete transcripts)
+          await supabase.from("call_sessions").delete().eq("id", sessionId);
+
+          // Delete audio file from storage
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const fileName = `${user.id}/${sessionId}.webm`;
+            await supabase.storage.from("recordings").remove([fileName]);
+          }
+
+          toast.error("Transcription failed", {
+            description: "No speech detected in the audio. Recording was not saved.",
+          });
+          return;
+        }
+
+        if (result.success) {
+          // Show success with compliance info
+          if (result.alerts && result.alerts > 0) {
+            toast.warning(`Recording saved - ${result.alerts} compliance alert(s) detected!`, {
+              description: 'Please review the recording for compliance issues.',
+              duration: 5000,
+            });
+          } else {
+            toast.success("Recording saved with speaker identification!");
+          }
+
+          // Redirect to the recording detail page
+          setTimeout(() => {
+            window.location.href = `/dashboard/recordings/${sessionId}`;
+          }, 1000);
         } else {
-          toast.error("Failed to upload audio");
+          toast.error("Failed to process transcription. Using real-time data.");
         }
       } else {
-        toast.error("No audio data available");
+        toast.error("Failed to upload audio");
       }
+    } else {
+      toast.error("No audio data available");
     }
 
     // Вызвать callback onSave
@@ -346,11 +591,11 @@ export default function ScribeRecorder({
       onSave({
         transcript: fullTranscript,
         segments: committedTranscripts,
-        duration: recordingDuration,
+        duration: finalDuration,
         language: detectedLanguage,
       });
     }
-  }, [committedTranscripts, recordingDuration, onSave, currentSessionId, getAudioBlob]);
+  }, [committedTranscripts, finalDuration, onSave, currentSessionId, getAudioBlob, recordingStartTime]);
 
   const handleReset = useCallback(() => {
     window.location.reload();
@@ -365,6 +610,9 @@ export default function ScribeRecorder({
   const fullTranscript = committedTranscripts.map((t) => t.text).join(" ");
   const wordCount = fullTranscript.split(" ").filter(Boolean).length;
   const detectedLanguage = committedTranscripts.find((t) => t.language)?.language;
+
+  // Check if save is available (validation)
+  const canSave = !isRecording && finalDuration >= 1 && committedTranscripts.length > 0 && wordCount >= 1;
 
   // Get first segment timestamp for relative time calculation
   const firstSegmentTimestamp = committedTranscripts.length > 0 ? committedTranscripts[0].timestamp : 0;
@@ -559,7 +807,9 @@ export default function ScribeRecorder({
                 {onSave && (
                   <button
                     onClick={handleSave}
-                    className="px-4 py-2 text-sm font-medium text-white bg-[#FF6B35] rounded-xl hover:bg-[#E85A2A] transition-colors flex items-center gap-2 shadow-sm"
+                    disabled={!canSave}
+                    className="px-4 py-2 text-sm font-medium text-white bg-[#FF6B35] rounded-xl hover:bg-[#E85A2A] transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={!canSave ? "Recording must be at least 1 second with speech" : "Save recording"}
                   >
                     <Save className="w-4 h-4" />
                     Save
@@ -585,12 +835,31 @@ export default function ScribeRecorder({
                 <p className="text-xs text-gray-500 mt-0.5">Real-time speech to text</p>
               </div>
             </div>
-            {isRecording && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 rounded-full">
-                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                <span className="text-xs font-medium text-red-600">LIVE</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {/* Alert counter */}
+              {realtimeAlertCount > 0 && (
+                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full ${
+                  criticalAlertCount > 0
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {criticalAlertCount > 0 ? (
+                    <Bell className="w-3.5 h-3.5" />
+                  ) : (
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                  )}
+                  <span className="text-xs font-semibold">
+                    {realtimeAlertCount} Alert{realtimeAlertCount > 1 ? 's' : ''}
+                  </span>
+                </div>
+              )}
+              {isRecording && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 rounded-full">
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  <span className="text-xs font-medium text-red-600">LIVE</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -600,10 +869,20 @@ export default function ScribeRecorder({
           className="relative flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar"
         >
           {/* Committed Segments */}
-          {committedTranscripts.map((segment, index) => (
+          {committedTranscripts.map((segment, index) => {
+            const alertInfo = segmentAlerts.get(segment.id);
+            const hasAlert = !!alertInfo;
+
+            return (
             <div
               key={segment.id}
-              className="group relative p-5 bg-gradient-to-br from-gray-50 to-white rounded-2xl border border-gray-100 hover:border-gray-200 transition-all duration-200 animate-fade-in"
+              className={`group relative p-5 rounded-2xl border transition-all duration-200 animate-fade-in ${
+                hasAlert
+                  ? alertInfo.severity === 'critical'
+                    ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-300 hover:border-red-400'
+                    : 'bg-gradient-to-br from-amber-50 to-yellow-100 border-yellow-300 hover:border-yellow-400'
+                  : 'bg-gradient-to-br from-gray-50 to-white border-gray-100 hover:border-gray-200'
+              }`}
             >
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0 mt-1">
@@ -615,7 +894,8 @@ export default function ScribeRecorder({
                   <p className="text-[15px] text-gray-900 leading-relaxed font-normal">
                     {segment.text}
                   </p>
-                  <div className="flex items-center gap-2 sm:gap-3 mt-3 pt-3 border-t border-gray-100 flex-wrap">
+                  <div className="flex items-center justify-between gap-2 sm:gap-3 mt-3 pt-3 border-t border-gray-100 flex-wrap">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                     {/* Timestamp - relative to recording start */}
                     <span className="flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
                       <Clock className="w-3.5 h-3.5" />
@@ -655,6 +935,20 @@ export default function ScribeRecorder({
                         </span>
                       </>
                     )}
+                    {segment.sentiment && (
+                      <>
+                        <span className="text-gray-300 hidden sm:inline">•</span>
+                        <span className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap ${
+                          segment.sentiment === 'positive' ? 'bg-green-50 text-green-700' :
+                          segment.sentiment === 'negative' ? 'bg-red-50 text-red-700' :
+                          'bg-gray-50 text-gray-700'
+                        }`}>
+                          {segment.sentiment === 'positive' ? <Smile className="w-3.5 h-3.5" /> :
+                           segment.sentiment === 'negative' ? <Frown className="w-3.5 h-3.5" /> : <Meh className="w-3.5 h-3.5" />}
+                          <span className="capitalize">{segment.sentiment}</span>
+                        </span>
+                      </>
+                    )}
                     {segment.confidence && (
                       <>
                         <span className="text-gray-300 hidden sm:inline">•</span>
@@ -666,23 +960,44 @@ export default function ScribeRecorder({
                         </span>
                       </>
                     )}
+                    </div>
+
+                    {/* Alert Badge */}
+                    {hasAlert && (
+                      <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold whitespace-nowrap ${
+                        alertInfo.severity === 'critical'
+                          ? 'bg-red-600 text-white'
+                          : 'bg-yellow-600 text-white'
+                      }`}>
+                        {alertInfo.severity === 'critical' ? (
+                          <Bell className="w-3.5 h-3.5" />
+                        ) : (
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                        )}
+                        <span className="uppercase">{alertInfo.severity}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(segment.text);
-                  toast.success("Text copied to clipboard");
-                }}
-                className="absolute top-3 right-3 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                title="Copy text"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </button>
+              {/* Copy button - only show when no alert */}
+              {!hasAlert && (
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(segment.text);
+                    toast.success("Text copied to clipboard");
+                  }}
+                  className="absolute top-3 right-3 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                  title="Copy text"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
+              )}
             </div>
-          ))}
+            );
+          })}
 
           {/* Partial (live) transcript */}
           {partialTranscript && (

@@ -9,7 +9,36 @@ interface StatsCardProps {
     positive: boolean;
   };
   subtitle?: string;
+  variant?: "default" | "critical" | "high" | "medium" | "low";
 }
+
+const variantStyles = {
+  default: {
+    iconBg: "bg-gray-50",
+    iconColor: "text-gray-600",
+    valueColor: "text-gray-900",
+  },
+  critical: {
+    iconBg: "bg-red-50",
+    iconColor: "text-red-600",
+    valueColor: "text-red-600",
+  },
+  high: {
+    iconBg: "bg-yellow-50",
+    iconColor: "text-yellow-600",
+    valueColor: "text-yellow-600",
+  },
+  medium: {
+    iconBg: "bg-orange-50",
+    iconColor: "text-orange-600",
+    valueColor: "text-orange-600",
+  },
+  low: {
+    iconBg: "bg-blue-50",
+    iconColor: "text-blue-600",
+    valueColor: "text-blue-600",
+  },
+};
 
 export default function StatsCard({
   title,
@@ -17,13 +46,16 @@ export default function StatsCard({
   icon: Icon,
   trend,
   subtitle,
+  variant = "default",
 }: StatsCardProps) {
+  const styles = variantStyles[variant];
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-6 hover:shadow-sm transition-shadow">
+    <div className="bg-white rounded-2xl border border-gray-200 p-6">
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <p className="text-sm text-gray-600 font-medium mb-1">{title}</p>
-          <p className="text-3xl font-semibold text-gray-900 mb-2">{value}</p>
+          <p className={`text-3xl font-semibold mb-2 ${styles.valueColor}`}>{value}</p>
           {subtitle && (
             <p className="text-sm text-gray-500">{subtitle}</p>
           )}
@@ -40,8 +72,8 @@ export default function StatsCard({
             </div>
           )}
         </div>
-        <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center">
-          <Icon className="w-6 h-6 text-gray-600" />
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${styles.iconBg}`}>
+          <Icon className={`w-6 h-6 ${styles.iconColor}`} />
         </div>
       </div>
     </div>

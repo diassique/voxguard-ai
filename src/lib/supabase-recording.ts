@@ -3,7 +3,8 @@
  * Функции для сохранения real-time записей в БД
  */
 
-import { createClient } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
+import type { ComplianceRule } from '@/types/compliance.types';
 
 export interface CallSession {
   id: string;
@@ -38,6 +39,10 @@ export interface CallTranscript {
   speaker_id?: string;
   speaker_role?: string;
   entities?: Array<{ type: string; text: string; start: number; end: number }>;
+  sentiment?: string;
+  sentiment_confidence?: number;
+  language_code?: string;
+  language_confidence?: number;
   has_alert: boolean;
   alert_ids?: string[];
   source: 'realtime' | 'batch';
@@ -66,7 +71,7 @@ export interface ComplianceAlert {
  * Создать новую сессию записи
  */
 export async function createCallSession(): Promise<CallSession | null> {
-  const supabase = createClient();
+  // Use singleton client to avoid duplicate requests
 
   const { data, error } = await supabase
     .from('call_sessions')
@@ -102,8 +107,15 @@ export async function saveTranscriptSegment(
   startTime: number,
   endTime?: number,
   words?: Array<{ text: string; start: number; end: number; type: string; speaker_id?: string; logprob?: number }>,
+  metadata?: {
+    sentiment?: string;
+    sentiment_confidence?: number;
+    language_code?: string;
+    language_confidence?: number;
+    speaker_id?: string;
+  }
 ): Promise<CallTranscript | null> {
-  const supabase = createClient();
+  // Use singleton client to avoid duplicate requests
 
   const wordCount = text.split(' ').filter(Boolean).length;
   const charCount = text.length;
@@ -119,6 +131,11 @@ export async function saveTranscriptSegment(
       words: words || [],
       word_count: wordCount,
       char_count: charCount,
+      sentiment: metadata?.sentiment,
+      sentiment_confidence: metadata?.sentiment_confidence,
+      language_code: metadata?.language_code,
+      language_confidence: metadata?.language_confidence,
+      speaker_id: metadata?.speaker_id,
       has_alert: false,
       source: 'realtime',
     })
@@ -126,21 +143,11 @@ export async function saveTranscriptSegment(
     .single();
 
   if (error) {
-    console.error('Failed to save transcript segment:', {
-      error,
-      errorMessage: error.message,
-      errorCode: error.code,
-      errorDetails: error.details,
-      errorHint: error.hint,
-      sessionId,
-      segmentIndex,
-      textLength: text?.length,
-      startTime,
-    });
+    console.error('Failed to save transcript segment:', error);
     return null;
   }
 
-  console.log(`💾 Segment ${segmentIndex} saved to DB:`, text.substring(0, 50));
+
 
   // Обновить метрики сессии
   await updateSessionMetrics(sessionId, wordCount, charCount);
@@ -156,7 +163,7 @@ export async function updateSessionMetrics(
   newWords: number,
   newChars: number,
 ): Promise<void> {
-  const supabase = createClient();
+  // Use singleton client to avoid duplicate requests
 
   // Получить текущие метрики
   const { data: session } = await supabase
@@ -176,11 +183,7 @@ export async function updateSessionMetrics(
     total_chars: session.total_chars + newChars,
   };
 
-  console.log('📊 Updating session metrics:', {
-    sessionId: sessionId.slice(0, 8),
-    before: session,
-    after: newMetrics,
-  });
+
 
   // Обновить
   const { error } = await supabase
@@ -200,7 +203,7 @@ export async function updateSessionLatency(
   sessionId: string,
   latencyMs: number,
 ): Promise<void> {
-  const supabase = createClient();
+  // Use singleton client to avoid duplicate requests
 
   const { data: session } = await supabase
     .from('call_sessions')
@@ -226,7 +229,7 @@ export async function updateSessionLatency(
  * Завершить сессию
  */
 export async function completeCallSession(sessionId: string): Promise<void> {
-  const supabase = createClient();
+  // Use singleton client to avoid duplicate requests
 
   const endedAt = new Date().toISOString();
 
@@ -258,7 +261,7 @@ export async function completeCallSession(sessionId: string): Promise<void> {
 export async function getSessionTranscripts(
   sessionId: string,
 ): Promise<CallTranscript[]> {
-  const supabase = createClient();
+  // Use singleton client to avoid duplicate requests
 
   const { data, error } = await supabase
     .from('call_transcripts')
@@ -278,50 +281,53 @@ export async function getSessionTranscripts(
  * Получить сессию с транскриптами
  */
 export async function getSessionWithTranscripts(sessionId: string) {
-  const supabase = createClient();
+  // Use singleton to avoid creating multiple clients
+  // Get session and transcripts in parallel
+  const [sessionResult, transcriptsResult, userResult] = await Promise.all([
+    supabase
+      .from('call_sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single(),
+    supabase
+      .from('call_transcripts')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('segment_index'),
+    supabase.auth.getUser(),
+  ]);
 
-  const { data: session, error: sessionError } = await supabase
-    .from('call_sessions')
-    .select('*')
-    .eq('id', sessionId)
-    .single();
+  const { data: session, error: sessionError } = sessionResult;
+  const { data: transcripts = [], error: transcriptsError } = transcriptsResult;
+  const { data: { user } } = userResult;
 
   if (sessionError) {
     console.error('Failed to get session:', sessionError);
     return null;
   }
 
-  const transcripts = await getSessionTranscripts(sessionId);
+  if (transcriptsError) {
+    console.error('Failed to get transcripts:', transcriptsError);
+  }
 
-  // Если есть audio_url, получить свежий signed URL
+  // Generate signed URL if needed
   let audioUrl = session.audio_url;
-  if (audioUrl) {
-    // Извлечь путь файла из URL
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const fileName = `${user.id}/${sessionId}.webm`;
-      const { data: signedData, error: signError } = await supabase.storage
-        .from('recordings')
-        .createSignedUrl(fileName, 3600); // 1 час
+  if (audioUrl && user) {
+    const fileName = `${user.id}/${sessionId}.webm`;
+    const { data: signedData } = await supabase.storage
+      .from('recordings')
+      .createSignedUrl(fileName, 3600); // 1 hour
 
-      console.log('🔗 Signed URL result:', { signedData, signError, fileName });
-
-      if (signedData?.signedUrl) {
-        // signedUrl может быть относительным, добавим базовый URL если нужно
-        if (signedData.signedUrl.startsWith('/')) {
-          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-          audioUrl = `${supabaseUrl}/storage/v1${signedData.signedUrl}`;
-        } else {
-          audioUrl = signedData.signedUrl;
-        }
-        console.log('🔊 Final audio URL:', audioUrl);
-      }
+    if (signedData?.signedUrl) {
+      audioUrl = signedData.signedUrl.startsWith('/')
+        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1${signedData.signedUrl}`
+        : signedData.signedUrl;
     }
   }
 
   return {
     session: { ...session, audio_url: audioUrl } as CallSession,
-    transcripts,
+    transcripts: transcripts as CallTranscript[],
   };
 }
 
@@ -339,7 +345,7 @@ export async function createComplianceAlert(
   audioStart?: number,
   audioEnd?: number,
 ): Promise<ComplianceAlert | null> {
-  const supabase = createClient();
+  // Use singleton client to avoid duplicate requests
 
   const { data, error } = await supabase
     .from('compliance_alerts')
@@ -408,7 +414,7 @@ function getMaxSeverity(current: string | null, newSeverity: string): string {
  * Получить все сессии текущего пользователя
  */
 export async function getAllUserSessions(): Promise<CallSession[]> {
-  const supabase = createClient();
+  // Use singleton client to avoid duplicate requests
 
   const { data, error } = await supabase
     .from('call_sessions')
@@ -430,7 +436,7 @@ export async function uploadAudioFile(
   sessionId: string,
   audioBlob: Blob,
 ): Promise<string | null> {
-  const supabase = createClient();
+  // Use singleton client to avoid duplicate requests
 
   try {
     // Получить user_id
@@ -444,7 +450,7 @@ export async function uploadAudioFile(
     const fileName = `${user.id}/${sessionId}.webm`;
 
     // Загрузить в Storage
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from('recordings')
       .upload(fileName, audioBlob, {
         contentType: audioBlob.type || 'audio/webm',
@@ -470,7 +476,7 @@ export async function uploadAudioFile(
         .getPublicUrl(fileName);
 
       const publicUrl = urlData.publicUrl;
-      console.log('✅ Audio uploaded (public URL):', publicUrl);
+
 
       await supabase
         .from('call_sessions')
@@ -480,7 +486,7 @@ export async function uploadAudioFile(
       return publicUrl;
     }
 
-    console.log('✅ Audio uploaded (signed URL):', signedData.signedUrl);
+
 
     // Обновить session с audio_url
     await supabase
@@ -496,15 +502,192 @@ export async function uploadAudioFile(
 }
 
 /**
+ * Check text against compliance rules from database
+ */
+export async function checkTextCompliance(
+  text: string,
+  rules?: ComplianceRule[]
+): Promise<{
+  violations: Array<{
+    rule: ComplianceRule;
+    matchedPattern: string;
+    matchedText: string;
+    confidence: number;
+  }>;
+  riskScore: number;
+}> {
+  // Use provided rules or fetch from database
+  let complianceRules = rules;
+
+  if (!complianceRules) {
+    const { data: fetchedRules, error } = await supabase
+      .from('compliance_rules')
+      .select('*')
+      .eq('is_active', true);
+
+    if (error || !fetchedRules || fetchedRules.length === 0) {
+      return { violations: [], riskScore: 0 };
+    }
+
+    complianceRules = fetchedRules as ComplianceRule[];
+  }
+
+  const violations: Array<{
+    rule: ComplianceRule;
+    matchedPattern: string;
+    matchedText: string;
+    confidence: number;
+  }> = [];
+
+  const lowerText = text.toLowerCase();
+
+  for (const rule of complianceRules) {
+    // Check text length
+    if (lowerText.length < rule.min_text_length) continue;
+
+    // Check patterns
+    for (const pattern of rule.patterns) {
+      try {
+        const regex = new RegExp(pattern, 'gi');
+        const matches = lowerText.match(regex);
+
+        if (matches && matches.length > 0) {
+          // Check exclude patterns
+          let excluded = false;
+          if (rule.exclude_patterns) {
+            for (const excludePattern of rule.exclude_patterns) {
+              const excludeRegex = new RegExp(excludePattern, 'gi');
+              if (excludeRegex.test(lowerText)) {
+                excluded = true;
+                break;
+              }
+            }
+          }
+
+          if (!excluded) {
+            violations.push({
+              rule: rule as ComplianceRule,
+              matchedPattern: pattern,
+              matchedText: matches[0],
+              confidence: rule.confidence_threshold,
+            });
+            break; // Only one violation per rule per segment
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing pattern ${pattern}:`, error);
+      }
+    }
+  }
+
+  // Calculate total risk score
+  const riskScore = violations.reduce((sum, v) => sum + v.rule.risk_score, 0);
+
+  return { violations, riskScore };
+}
+
+/**
+ * Save compliance alerts for a transcript segment (real-time)
+ */
+export async function saveRealtimeComplianceAlerts(
+  sessionId: string,
+  transcriptId: string,
+  text: string,
+  startTime: number,
+  endTime: number,
+  violations: Array<{
+    rule: ComplianceRule;
+    matchedPattern: string;
+    matchedText: string;
+    confidence: number;
+  }>,
+  speakerId?: string
+): Promise<{ alertIds: string[]; criticalCount: number; highCount: number }> {
+  const alertIds: string[] = [];
+  let criticalCount = 0;
+  let highCount = 0;
+
+  // Get context text (surrounding text, if we had it)
+  const contextText = text;
+
+  for (const violation of violations) {
+    const { rule, matchedText, matchedPattern } = violation;
+
+    // Create compliance alert
+    const { data, error } = await supabase
+      .from('compliance_alerts')
+      .insert({
+        session_id: sessionId,
+        transcript_id: transcriptId,
+        rule_code: rule.rule_code,
+        category: rule.category,
+        severity: rule.severity,
+        matched_text: matchedText,
+        matched_pattern: matchedPattern,
+        context_text: contextText,
+        audio_start: startTime,
+        audio_end: endTime,
+        speaker_id: speakerId,
+        status: 'active',
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to save compliance alert:', error);
+      continue;
+    }
+
+    if (data) {
+      alertIds.push(data.id);
+
+      // Count by severity
+      if (rule.severity === 'critical') criticalCount++;
+      if (rule.severity === 'high') highCount++;
+    }
+  }
+
+  // Update transcript with alert info
+  if (alertIds.length > 0) {
+    await supabase
+      .from('call_transcripts')
+      .update({
+        has_alert: true,
+        alert_ids: alertIds,
+      })
+      .eq('id', transcriptId);
+  }
+
+  return { alertIds, criticalCount, highCount };
+}
+
+/**
+ * Load compliance rules (for caching in components)
+ */
+export async function loadComplianceRules(): Promise<ComplianceRule[]> {
+  const { data, error } = await supabase
+    .from('compliance_rules')
+    .select('*')
+    .eq('is_active', true);
+
+  if (error || !data) {
+    console.error('Failed to load compliance rules:', error);
+    return [];
+  }
+
+  return data as ComplianceRule[];
+}
+
+/**
  * Process batch transcription and save to database
  * This replaces the real-time segments with accurate batch-processed segments
  */
 export async function processBatchTranscription(
   sessionId: string,
   audioUrl: string,
-): Promise<boolean> {
+): Promise<{ success: boolean; alerts?: number; criticalAlerts?: number; highAlerts?: number }> {
   try {
-    console.log('🎙️ Starting batch transcription for session:', sessionId);
+
 
     // Call batch transcription API
     const response = await fetch('/api/transcribe-batch', {
@@ -518,19 +701,33 @@ export async function processBatchTranscription(
     if (!response.ok) {
       const errorData = await response.json();
       console.error('Batch transcription API error:', errorData);
-      return false;
+      return { success: false };
     }
 
     const result = await response.json();
-    console.log('✅ Batch transcription completed');
-    console.log('📊 Response:', {
-      text: result.text?.substring(0, 100),
-      wordsCount: result.words?.length,
-      languageCode: result.language_code
-    });
+
+
+    // 🛡️ VALIDATION: Check if transcription has any content
+    if (!result.words || result.words.length === 0) {
+      console.error('❌ Batch transcription returned no words');
+      return { success: false };
+    }
+
+    // Calculate duration from last word
+    const lastWord = result.words[result.words.length - 1];
+    const calculatedDuration = lastWord?.end || 0;
+
+    // Validate duration
+    const MIN_DURATION = 0.5; // 500ms minimum
+    if (calculatedDuration < MIN_DURATION) {
+      console.error(`❌ Audio too short: ${calculatedDuration}s (minimum: ${MIN_DURATION}s)`);
+      return { success: false };
+    }
+
+
 
     // Delete old real-time segments
-    const supabase = createClient();
+    // Use singleton client to avoid duplicate requests
     const { error: deleteError } = await supabase
       .from('call_transcripts')
       .delete()
@@ -538,10 +735,16 @@ export async function processBatchTranscription(
 
     if (deleteError) {
       console.error('Failed to delete old segments:', deleteError);
-      return false;
+      return { success: false };
     }
 
-    console.log('🗑️ Deleted old real-time segments');
+
+
+    // Initialize tracking variables
+    let totalAlerts = 0;
+    let totalRiskScore = 0;
+    let criticalCount = 0;
+    let highCount = 0;
 
     // ElevenLabs batch API returns a flat array of words with speaker_id
     // We need to group them into segments by speaker changes
@@ -576,57 +779,178 @@ export async function processBatchTranscription(
         segments.push(currentSegment);
       }
 
-      console.log(`📊 Created ${segments.length} segments from ${result.words.length} words`);
 
-      // Convert to database format
-      const newSegments = segments.map((segment: any, index: number) => {
+
+      // Fetch compliance rules once for all segments
+      const { data: complianceRules, error: rulesError } = await supabase
+        .from('compliance_rules')
+        .select('*')
+        .eq('is_active', true);
+
+      if (rulesError) {
+        console.error('Failed to fetch compliance rules:', rulesError);
+      }
+
+      const rules = (complianceRules || []) as ComplianceRule[];
+
+
+      // Convert to database format and check compliance
+      const segmentsWithViolations = await Promise.all(segments.map(async (segment: any, index: number) => {
         const text = segment.words.map((w: any) => w.text).join('');
+        const trimmedText = text.trim();
+
+        // Check compliance for this segment (pass rules to avoid re-fetching)
+        const { violations } = await checkTextCompliance(trimmedText, rules);
+        const hasAlert = violations.length > 0;
+
+        // Extract sentiment and language metadata from words if available
+        const firstWord = segment.words[0];
+        const sentiment = firstWord?.sentiment || segment.sentiment;
+        const sentiment_confidence = firstWord?.sentiment_confidence || segment.sentiment_confidence;
+        const language_code = firstWord?.language || segment.language;
+        const language_confidence = firstWord?.language_confidence || segment.language_confidence;
 
         return {
           session_id: sessionId,
           segment_index: index,
-          text: text.trim(),
+          text: trimmedText,
           start_time: segment.start_time,
           end_time: segment.end_time,
           speaker_id: segment.speaker_id,
           words: segment.words,
           word_count: segment.words.length,
           char_count: text.length,
-          has_alert: false,
+          sentiment,
+          sentiment_confidence,
+          language_code,
+          language_confidence,
+          has_alert: hasAlert,
           source: 'batch',
+          violations: violations.length > 0 ? violations : undefined, // Temporary field for processing
         };
+      }));
+
+      // Separate violations from segments before inserting to DB
+      const newSegments = segmentsWithViolations.map((item) => {
+        const segment = { ...item };
+        delete segment.violations;
+        return segment;
       });
 
-      const { error: insertError } = await supabase
+      const { data: insertedTranscripts, error: insertError } = await supabase
         .from('call_transcripts')
-        .insert(newSegments);
+        .insert(newSegments)
+        .select('id, segment_index');
 
       if (insertError) {
         console.error('Failed to insert batch segments:', insertError);
-        return false;
+        return { success: false };
       }
 
-      console.log(`✅ Saved ${newSegments.length} batch-processed segments`);
 
-      // Update session metrics
-      await updateSessionMetrics(sessionId);
+
+      // Create a map of segment_index -> transcript_id
+      const transcriptIdMap = new Map<number, string>();
+      insertedTranscripts?.forEach((t: any) => {
+        transcriptIdMap.set(t.segment_index, t.id);
+      });
+
+
+
+      // Calculate total metrics from segments
+      const totalWords = newSegments.reduce((sum, seg) => sum + seg.word_count, 0);
+      const totalChars = newSegments.reduce((sum, seg) => sum + seg.char_count, 0);
+
+      // Process compliance violations and create alerts
+      const allViolations = segmentsWithViolations
+        .filter(seg => seg.violations && seg.violations.length > 0)
+        .flatMap(seg => (seg.violations ?? []).map((v: any) => ({ ...v, segment: seg })));
+
+      if (allViolations.length > 0) {
+
+
+        // Count by severity
+        criticalCount = allViolations.filter((v: any) => v.rule.severity === 'critical').length;
+        highCount = allViolations.filter((v: any) => v.rule.severity === 'high').length;
+
+        // Create compliance alerts matching the actual DB schema
+        const alerts = allViolations.map((violation: any) => {
+          const transcriptId = transcriptIdMap.get(violation.segment.segment_index);
+
+          if (!transcriptId) {
+
+          }
+
+          return {
+            session_id: sessionId,
+            transcript_id: transcriptId || null,
+            rule_code: violation.rule.rule_code,
+            category: violation.rule.category,
+            severity: violation.rule.severity,
+            matched_text: violation.matchedText,
+            matched_pattern: violation.matchedPattern,
+            context_text: violation.segment.text,
+            audio_start: violation.segment.start_time,
+            audio_end: violation.segment.end_time,
+            speaker_id: violation.segment.speaker_id || null,
+            entity_type: null,
+            status: 'new',
+          };
+        });
+
+
+
+        const { error: alertError } = await supabase
+          .from('compliance_alerts')
+          .insert(alerts);
+
+        if (alertError) {
+          console.error('Failed to create compliance alerts:', alertError);
+        } else {
+          totalAlerts = alerts.length;
+          totalRiskScore = allViolations.reduce((sum: number, v: any) => sum + v.rule.risk_score, 0);
+        }
+      }
+
+      // Use validated duration (already calculated above)
+      const duration = calculatedDuration;
+
+      // Update session with all metadata in ONE request
+      const endedAt = new Date().toISOString();
+      const { error: updateError } = await supabase
+        .from('call_sessions')
+        .update({
+          status: 'completed',
+          ended_at: endedAt,
+          duration_seconds: duration,
+          batch_processed: true,
+          total_segments: newSegments.length,
+          total_words: totalWords,
+          total_chars: totalChars,
+          total_alerts: totalAlerts,
+          risk_score: totalRiskScore,
+        })
+        .eq('id', sessionId);
+
+      if (updateError) {
+        console.error('Failed to update session:', updateError);
+        return { success: false };
+      }
+
+
     } else {
-      console.warn('⚠️ No words in batch transcription result');
-      return false;
+
+      return { success: false };
     }
 
-    // Update session status
-    await supabase
-      .from('call_sessions')
-      .update({
-        status: 'completed',
-        language_code: result.language_code || null,
-      })
-      .eq('id', sessionId);
-
-    return true;
+    return {
+      success: true,
+      alerts: totalAlerts,
+      criticalAlerts: criticalCount,
+      highAlerts: highCount,
+    };
   } catch (error) {
     console.error('Batch transcription processing error:', error);
-    return false;
+    return { success: false };
   }
 }

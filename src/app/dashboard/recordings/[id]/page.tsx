@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter, useParams } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import Sidebar from "@/components/dashboard/Sidebar";
 import { useSidebar } from "@/contexts/SidebarContext";
 import {
@@ -27,6 +27,8 @@ import {
   type CallTranscript,
 } from "@/lib/supabase-recording";
 import { createClient } from "@/lib/supabase";
+import ComplianceAlertModal from "@/components/ComplianceAlertModal";
+import DeleteConfirmModal from "@/components/modals/DeleteConfirmModal";
 
 export default function RecordingDetailPage() {
   const { user, loading } = useAuth();
@@ -46,8 +48,14 @@ export default function RecordingDetailPage() {
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioLoading, setAudioLoading] = useState(true);
   const [audioReady, setAudioReady] = useState(false);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | undefined>();
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null);
+  const loadingRef = useRef(false); // Prevent duplicate loads
+  const activeSegmentRef = useRef<HTMLDivElement>(null);
+  const transcriptContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -58,35 +66,64 @@ export default function RecordingDetailPage() {
   // Load session data
   useEffect(() => {
     async function loadData() {
-      if (!sessionId) return;
+      if (!sessionId || loadingRef.current) return;
 
+      loadingRef.current = true;
       setLoadingData(true);
+
       const data = await getSessionWithTranscripts(sessionId);
 
       if (data) {
         setSession(data.session);
         setTranscripts(data.transcripts);
+
+        // CRITICAL FIX: Set duration from DB immediately after loading session
+        // This ensures the timeline works correctly from the first playback
+        if (data.session.duration_seconds && data.session.duration_seconds > 0) {
+          setDuration(data.session.duration_seconds);
+          console.log('✅ Initialized duration from DB:', data.session.duration_seconds);
+        }
       } else {
         toast.error("Recording not found");
         router.push("/dashboard/recordings");
       }
 
       setLoadingData(false);
+      loadingRef.current = false;
     }
 
     loadData();
-  }, [sessionId, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]); // Only depend on sessionId, not router
 
-  // Update active segment based on current time
+  // Optimize active segment calculation with throttling
   useEffect(() => {
-    if (transcripts.length === 0 || !isPlaying) return;
+    if (transcripts.length === 0 || !isPlaying) {
+      setActiveSegmentIndex(null);
+      return;
+    }
 
-    const activeIndex = transcripts.findIndex((t, i) => {
-      const nextTranscript = transcripts[i + 1];
-      const start = t.start_time;
+    // Binary search for better performance with large transcript lists
+    let left = 0;
+    let right = transcripts.length - 1;
+    let activeIndex = -1;
+
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      const transcript = transcripts[mid];
+      const nextTranscript = transcripts[mid + 1];
+      const start = transcript.start_time;
       const end = nextTranscript ? nextTranscript.start_time : Infinity;
-      return currentTime >= start && currentTime < end;
-    });
+
+      if (currentTime >= start && currentTime < end) {
+        activeIndex = mid;
+        break;
+      } else if (currentTime < start) {
+        right = mid - 1;
+      } else {
+        left = mid + 1;
+      }
+    }
 
     setActiveSegmentIndex(activeIndex >= 0 ? activeIndex : null);
   }, [currentTime, transcripts, isPlaying]);
@@ -110,9 +147,19 @@ export default function RecordingDetailPage() {
 
   const handleLoadedMetadata = () => {
     if (audioRef.current) {
+      // CRITICAL FIX: Prefer session.duration_seconds from DB over audio.duration
+      // WebM files often have Infinity or incorrect duration until fully played
+      const dbDuration = session?.duration_seconds;
       const audioDuration = audioRef.current.duration;
-      if (isFinite(audioDuration) && audioDuration > 0) {
+
+      if (dbDuration && dbDuration > 0) {
+        // Use DB duration as source of truth
+        setDuration(dbDuration);
+        console.log('✅ Using DB duration:', dbDuration);
+      } else if (isFinite(audioDuration) && audioDuration > 0) {
+        // Fallback to audio metadata if DB doesn't have it
         setDuration(audioDuration);
+        console.log('⚠️ Using audio duration (DB unavailable):', audioDuration);
       }
       setAudioLoading(false);
       setAudioReady(true);
@@ -126,9 +173,14 @@ export default function RecordingDetailPage() {
 
   const handleDurationChange = () => {
     if (audioRef.current) {
-      const audioDuration = audioRef.current.duration;
-      if (isFinite(audioDuration) && audioDuration > 0) {
-        setDuration(audioDuration);
+      // CRITICAL FIX: Only update duration if we don't have it from DB already
+      // This prevents overwriting correct DB duration with incorrect audio metadata
+      if (duration === 0 || !session?.duration_seconds) {
+        const audioDuration = audioRef.current.duration;
+        if (isFinite(audioDuration) && audioDuration > 0) {
+          setDuration(audioDuration);
+          console.log('⚠️ Updated duration from audio metadata:', audioDuration);
+        }
       }
     }
   };
@@ -141,31 +193,41 @@ export default function RecordingDetailPage() {
     }
   };
 
-  const handleSegmentClick = (transcript: CallTranscript) => {
+  const handleSegmentClick = useCallback((transcript: CallTranscript, index: number) => {
     if (audioRef.current && session?.audio_url) {
-      audioRef.current.currentTime = transcript.start_time;
+      // Immediately update UI state for instant feedback
+      setActiveSegmentIndex(index);
       setCurrentTime(transcript.start_time);
+
+      // Then update audio
+      audioRef.current.currentTime = transcript.start_time;
       if (!isPlaying) {
-        audioRef.current.play();
+        audioRef.current.play().catch(() => {
+          // Ignore autoplay errors
+        });
         setIsPlaying(true);
       }
     }
-  };
+  }, [session?.audio_url, isPlaying]);
 
-  // Track the max time we've seen during playback (for WebM duration workaround)
-  const [maxSeenTime, setMaxSeenTime] = useState(0);
-
-  // Update max seen time during playback
+  // Auto-scroll to active segment
   useEffect(() => {
-    if (currentTime > maxSeenTime) {
-      setMaxSeenTime(currentTime);
-    }
-  }, [currentTime, maxSeenTime]);
+    if (activeSegmentIndex !== null && activeSegmentRef.current && transcriptContainerRef.current) {
+      const container = transcriptContainerRef.current;
+      const element = activeSegmentRef.current;
 
-  // Use audio metadata duration, or fall back to max seen time during playback
-  const effectiveDuration = isFinite(duration) && duration > 0
-    ? duration
-    : (maxSeenTime > 0 ? maxSeenTime : 0);
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+
+      // Only scroll if element is not fully visible
+      if (elementRect.top < containerRect.top || elementRect.bottom > containerRect.bottom) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [activeSegmentIndex]);
+
+  // Use duration from state (which is set from DB or audio metadata)
+  const effectiveDuration = duration;
 
   const handleSkip = (seconds: number) => {
     if (audioRef.current) {
@@ -197,11 +259,11 @@ export default function RecordingDetailPage() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm("Are you sure you want to delete this recording? This action cannot be undone.")) {
-      return;
-    }
+  const handleDeleteClick = () => {
+    setShowDeleteModal(true);
+  };
 
+  const handleDeleteConfirm = async () => {
     setDeleting(true);
 
     try {
@@ -223,6 +285,7 @@ export default function RecordingDetailPage() {
       }
 
       toast.success("Recording deleted");
+      setShowDeleteModal(false);
       router.push("/dashboard/recordings");
     } catch {
       toast.error("Failed to delete recording");
@@ -253,10 +316,125 @@ export default function RecordingDetailPage() {
 
   if (loading || loadingData) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-[#FF6B35] border-t-transparent rounded-full animate-spin" />
-          <div className="text-gray-600">Loading recording...</div>
+      <div className="min-h-screen bg-gray-50">
+        <Sidebar />
+
+        <div className={`p-8 transition-all duration-300 ${isCollapsed ? "ml-20" : "ml-64"}`}>
+          {/* Header Skeleton */}
+          <div className="mb-8">
+            {/* Back button skeleton */}
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />
+              <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+            </div>
+
+            {/* Title and actions skeleton */}
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="h-8 w-48 bg-gray-200 rounded-lg mb-3 animate-pulse" />
+                <div className="flex items-center gap-4">
+                  <div className="h-4 w-64 bg-gray-200 rounded animate-pulse" />
+                  <div className="h-4 w-16 bg-gray-200 rounded animate-pulse" />
+                  <div className="h-6 w-20 bg-gray-200 rounded-full animate-pulse" />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-28 bg-gray-200 rounded-xl animate-pulse" />
+                <div className="h-10 w-24 bg-gray-200 rounded-xl animate-pulse" />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Column - Audio Player & Stats Skeleton */}
+            <div className="lg:col-span-1 space-y-6">
+              {/* Audio Player Skeleton */}
+              <div className="bg-white rounded-2xl border border-gray-200 p-6">
+                <div className="flex flex-col items-center">
+                  {/* Play button skeleton */}
+                  <div className="w-16 h-16 bg-gray-200 rounded-full animate-pulse" />
+
+                  {/* Time display skeleton */}
+                  <div className="mt-4 flex items-center gap-3">
+                    <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
+                    <div className="h-4 w-2 bg-gray-200 rounded animate-pulse" />
+                    <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
+                  </div>
+
+                  {/* Progress bar skeleton */}
+                  <div className="w-full mt-4">
+                    <div className="h-1 bg-gray-200 rounded-full animate-pulse" />
+                  </div>
+
+                  {/* Controls skeleton */}
+                  <div className="flex items-center justify-center gap-1 mt-5">
+                    <div className="w-9 h-9 bg-gray-200 rounded-full animate-pulse" />
+                    <div className="w-16 h-7 bg-gray-200 rounded-full animate-pulse" />
+                    <div className="w-9 h-9 bg-gray-200 rounded-full animate-pulse" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats Card Skeleton */}
+              <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                <div className="h-5 w-32 bg-gray-200 rounded mb-4 animate-pulse" />
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />
+                        <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+                      </div>
+                      <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column - Transcript Skeleton */}
+            <div className="lg:col-span-2">
+              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                {/* Header */}
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gray-200 rounded-xl animate-pulse" />
+                      <div>
+                        <div className="h-5 w-24 bg-gray-200 rounded mb-2 animate-pulse" />
+                        <div className="h-3 w-20 bg-gray-200 rounded animate-pulse" />
+                      </div>
+                    </div>
+                    <div className="h-7 w-20 bg-gray-200 rounded-lg animate-pulse" />
+                  </div>
+                </div>
+
+                {/* Transcript segments skeleton */}
+                <div className="max-h-[600px] overflow-hidden">
+                  <div className="divide-y divide-gray-100">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                      <div key={i} className="px-5 py-4">
+                        <div className="flex items-start gap-4">
+                          <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse" />
+                          <div className="flex-1">
+                            <div className="space-y-2 mb-2">
+                              <div className="h-4 w-full bg-gray-200 rounded animate-pulse" />
+                              <div className="h-4 w-5/6 bg-gray-200 rounded animate-pulse" />
+                              <div className="h-4 w-4/6 bg-gray-200 rounded animate-pulse" />
+                            </div>
+                            <div className="flex items-center gap-3 mt-2">
+                              <div className="h-3 w-24 bg-gray-200 rounded animate-pulse" />
+                              <div className="h-3 w-16 bg-gray-200 rounded animate-pulse" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -322,12 +500,11 @@ export default function RecordingDetailPage() {
                 Download
               </button>
               <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm font-medium text-red-600 hover:bg-red-100 disabled:opacity-50 transition-colors"
+                onClick={handleDeleteClick}
+                className="flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm font-medium text-red-600 hover:bg-red-100 transition-colors"
               >
                 <Trash2 className="w-4 h-4" />
-                {deleting ? "Deleting..." : "Delete"}
+                Delete
               </button>
             </div>
           </div>
@@ -337,7 +514,7 @@ export default function RecordingDetailPage() {
           {/* Left Column - Audio Player & Stats */}
           <div className="lg:col-span-1 space-y-6">
             {/* Audio Player Card - Apple-style minimalist design */}
-            <div className="bg-gradient-to-b from-gray-50 to-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-b from-gray-50 to-white rounded-2xl border border-gray-200 overflow-hidden">
               <div className="p-6">
                 {session.audio_url && !audioError ? (
                   <>
@@ -350,10 +527,6 @@ export default function RecordingDetailPage() {
                       onCanPlay={handleCanPlay}
                       onEnded={() => {
                         setIsPlaying(false);
-                        // WebM duration fix: when audio ends, we know the real duration
-                        if (audioRef.current && audioRef.current.currentTime > 0) {
-                          setDuration(audioRef.current.currentTime);
-                        }
                       }}
                       onError={(e) => {
                         console.error('Audio error:', e);
@@ -372,10 +545,10 @@ export default function RecordingDetailPage() {
                         disabled={audioLoading}
                         className={`
                           w-16 h-16 rounded-full flex items-center justify-center
-                          transition-all duration-200 ease-out
+                          transition-colors duration-200 ease-out
                           ${audioLoading
                             ? 'bg-gray-100 cursor-wait'
-                            : 'bg-[#FF6B35] hover:bg-[#E85A2A] hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl'
+                            : 'bg-[#FF6B35] hover:bg-[#E85A2A] active:scale-95 shadow-lg'
                           }
                         `}
                       >
@@ -384,7 +557,7 @@ export default function RecordingDetailPage() {
                         ) : isPlaying ? (
                           <Pause className="w-6 h-6 text-white" />
                         ) : (
-                          <Play className="w-6 h-6 text-white ml-1" />
+                          <Play className="w-6 h-6 text-white ml-0.5" />
                         )}
                       </button>
 
@@ -594,25 +767,30 @@ export default function RecordingDetailPage() {
                 </div>
               </div>
 
-              <div className="max-h-[600px] overflow-y-auto custom-scrollbar">
+              <div ref={transcriptContainerRef} className="max-h-[600px] overflow-y-auto custom-scrollbar">
                 {transcripts.length > 0 ? (
                   <div className="divide-y divide-gray-100">
                     {transcripts.map((transcript, index) => (
                       <div
                         key={transcript.id}
-                        onClick={() => handleSegmentClick(transcript)}
-                        className={`px-5 py-4 cursor-pointer transition-all duration-200 ${
+                        ref={activeSegmentIndex === index ? activeSegmentRef : null}
+                        onClick={() => handleSegmentClick(transcript, index)}
+                        className={`px-5 py-4 cursor-pointer transition-colors duration-100 ${
                           activeSegmentIndex === index
-                            ? "bg-[#FF6B35]/5 border-l-4 border-[#FF6B35]"
+                            ? transcript.has_alert
+                              ? "bg-red-50/50 border-l-4 border-red-500"
+                              : "bg-[#FF6B35]/5 border-l-4 border-[#FF6B35]"
+                            : transcript.has_alert
+                            ? "bg-red-50/30 hover:bg-red-50/50"
                             : "hover:bg-gray-50"
                         }`}
                       >
                         <div className="flex items-start gap-4">
                           <div className="flex-shrink-0">
                             <div
-                              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${
+                              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-100 ${
                                 activeSegmentIndex === index
-                                  ? "bg-[#FF6B35] text-white"
+                                  ? "bg-[#FF6B35] text-white scale-110"
                                   : "bg-gray-100 text-gray-600"
                               }`}
                             >
@@ -623,30 +801,61 @@ export default function RecordingDetailPage() {
                             <p className="text-[15px] text-gray-900 leading-relaxed">
                               {transcript.text}
                             </p>
-                            <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                              <span className="flex items-center gap-1 font-mono">
-                                <Clock className="w-3 h-3" />
-                                {formatTime(transcript.start_time)}
-                                {transcript.end_time && ` - ${formatTime(transcript.end_time)}`}
-                              </span>
-                              {transcript.word_count && (
-                                <span>{transcript.word_count} words</span>
-                              )}
-                              {transcript.speaker_id && (
-                                <span className="flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-600 rounded">
-                                  <User className="w-3 h-3" />
-                                  {transcript.speaker_id}
+                            <div className="flex items-center justify-between gap-3 mt-2 text-xs text-gray-500">
+                              <div className="flex items-center gap-3">
+                                <span className="flex items-center gap-1 font-mono">
+                                  <Clock className="w-3 h-3" />
+                                  {formatTime(transcript.start_time)}
+                                  {transcript.end_time && ` - ${formatTime(transcript.end_time)}`}
                                 </span>
+                                {transcript.word_count && (
+                                  <span>{transcript.word_count} words</span>
+                                )}
+                                {transcript.speaker_id && (
+                                  <span className="flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-600 rounded">
+                                    <User className="w-3 h-3" />
+                                    {transcript.speaker_id}
+                                  </span>
+                                )}
+                                {transcript.sentiment && (
+                                  <span className={`flex items-center gap-1 px-2 py-0.5 rounded ${
+                                    transcript.sentiment === 'positive' ? 'bg-green-50 text-green-600' :
+                                    transcript.sentiment === 'negative' ? 'bg-red-50 text-red-600' :
+                                    'bg-gray-50 text-gray-600'
+                                  }`}>
+                                    {transcript.sentiment === 'positive' ? '😊' :
+                                     transcript.sentiment === 'negative' ? '😟' : '😐'}
+                                    {transcript.sentiment}
+                                  </span>
+                                )}
+                                {transcript.language_code && (
+                                  <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 rounded">
+                                    🌐 {transcript.language_code}
+                                  </span>
+                                )}
+                                {transcript.has_alert && (
+                                  <span className="flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-600 rounded font-medium">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    Compliance Alert
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* View Details Button - Right aligned */}
+                              {transcript.has_alert && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedTranscriptId(transcript.id);
+                                    setShowAlertModal(true);
+                                  }}
+                                  className="relative text-red-600 hover:text-red-700 hover:underline transition-all animate-pulse-subtle text-xs font-medium"
+                                >
+                                  View Details
+                                </button>
                               )}
                             </div>
                           </div>
-                          {transcript.has_alert && (
-                            <div className="flex-shrink-0">
-                              <span className="px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-medium">
-                                Alert
-                              </span>
-                            </div>
-                          )}
                         </div>
                       </div>
                     ))}
@@ -669,6 +878,11 @@ export default function RecordingDetailPage() {
       </div>
 
       <style jsx>{`
+        .custom-scrollbar {
+          /* Enable hardware acceleration */
+          will-change: scroll-position;
+          transform: translateZ(0);
+        }
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
         }
@@ -682,7 +896,57 @@ export default function RecordingDetailPage() {
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: #d1d5db;
         }
+
+        /* Optimize transitions with hardware acceleration */
+        .custom-scrollbar > div > div {
+          will-change: background-color, border-color;
+          transform: translateZ(0);
+        }
+
+        /* View Details Button Animation */
+        @keyframes pulse-subtle {
+          0%, 100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.85;
+          }
+        }
+
+        .animate-pulse-subtle {
+          animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Accessibility: Respect user's motion preferences */
+        @media (prefers-reduced-motion: reduce) {
+          .animate-pulse-subtle {
+            animation: none;
+          }
+        }
       `}</style>
+
+      {/* Compliance Alert Modal */}
+      <ComplianceAlertModal
+        isOpen={showAlertModal}
+        onClose={() => {
+          setShowAlertModal(false);
+          setSelectedTranscriptId(undefined);
+        }}
+        sessionId={sessionId}
+        transcriptId={selectedTranscriptId}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Recording"
+        message="Are you sure you want to delete this recording? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDeleting={deleting}
+      />
     </div>
   );
 }

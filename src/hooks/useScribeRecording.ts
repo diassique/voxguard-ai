@@ -15,6 +15,8 @@ interface TranscriptSegment {
   words?: TranscriptWord[];
   language?: string;
   confidence?: number;
+  sentiment?: string;
+  sentiment_confidence?: number;
   timestamp: number;
 }
 
@@ -27,6 +29,7 @@ interface ScribeConfig {
   vadThreshold?: number;
   maxReconnectAttempts?: number;
   reconnectDelay?: number;
+  onSegmentReceived?: (segment: TranscriptSegment) => void; // Callback for immediate segment processing
 }
 
 const WORKLET_URL = "/audio-processor.worklet.js";
@@ -204,6 +207,20 @@ export function useScribeRecording(config: ScribeConfig = {}) {
       url.searchParams.set("include_language_detection", String(includeLanguageDetection));
       url.searchParams.set("vad_threshold", String(vadThreshold));
 
+      // Enhanced Scribe V2 features
+      url.searchParams.set("punctuation", "enhanced"); // Better text formatting
+      url.searchParams.set("profanity_filter", "true"); // Mask profanity for compliance
+      url.searchParams.set("include_sentiment", "true"); // Sentiment analysis
+      url.searchParams.set("paragraphs", "true"); // Paragraph detection
+
+      // Custom vocabulary for compliance terms
+      const customVocabulary = [
+        "GDPR", "HIPAA", "compliance", "персональные данные",
+        "конфиденциальность", "согласие", "обработка данных",
+        "субъект данных", "контроллер", "процессор"
+      ];
+      url.searchParams.set("vocabulary", JSON.stringify(customVocabulary));
+
       const ws = new WebSocket(url.toString());
 
       ws.addEventListener("open", () => {
@@ -262,6 +279,8 @@ export function useScribeRecording(config: ScribeConfig = {}) {
                 words: message.words,
                 language: message.language,
                 confidence: message.confidence,
+                sentiment: message.sentiment,
+                sentiment_confidence: message.sentiment_confidence,
                 timestamp: Date.now(),
               };
               setCommittedTranscripts((prev) => {
@@ -280,7 +299,16 @@ export function useScribeRecording(config: ScribeConfig = {}) {
                     segment.words) {
                   console.log("✅ Replacing segment without words with timestamped version");
                   const updated = [...prev];
-                  updated[updated.length - 1] = segment;
+                  // IMPORTANT: Keep the same ID to preserve alert associations
+                  const updatedSegment = { ...segment, id: lastSegment.id };
+                  updated[updated.length - 1] = updatedSegment;
+
+                  // 🚨 TRIGGER CALLBACK FOR IMMEDIATE PROCESSING
+                  // Call onSegmentReceived immediately when segment with words is ready
+                  if (config.onSegmentReceived) {
+                    config.onSegmentReceived(updatedSegment);
+                  }
+
                   return updated;
                 }
 
@@ -299,6 +327,12 @@ export function useScribeRecording(config: ScribeConfig = {}) {
                 if (recentDuplicate) {
                   console.warn("⚠️ Duplicate transcript detected (recent, both have words), skipping");
                   return prev;
+                }
+
+                // 🚨 TRIGGER CALLBACK FOR IMMEDIATE PROCESSING
+                // Call onSegmentReceived immediately when new segment is added
+                if (config.onSegmentReceived) {
+                  config.onSegmentReceived(segment);
                 }
 
                 return [...prev, segment];

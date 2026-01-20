@@ -8,7 +8,7 @@ export default function Features() {
       ),
       title: "Real-time Transcription",
       description: "Convert voice to text instantly with 99% accuracy using ElevenLabs Scribe v2 technology.",
-      color: "blue",
+      gradient: "from-blue-500 to-blue-600",
     },
     {
       icon: (
@@ -18,7 +18,7 @@ export default function Features() {
       ),
       title: "Compliance Monitoring",
       description: "Automatically detect compliance violations and regulatory issues in real-time.",
-      color: "green",
+      gradient: "from-green-500 to-emerald-600",
     },
     {
       icon: (
@@ -28,7 +28,7 @@ export default function Features() {
       ),
       title: "Detailed Reports",
       description: "Generate comprehensive compliance reports with actionable insights.",
-      color: "purple",
+      gradient: "from-purple-500 to-purple-600",
     },
     {
       icon: (
@@ -38,7 +38,7 @@ export default function Features() {
       ),
       title: "Enterprise Security",
       description: "Bank-level encryption and SOC 2 compliant infrastructure for your data.",
-      color: "orange",
+      gradient: "from-orange-500 to-red-600",
     },
     {
       icon: (
@@ -48,7 +48,7 @@ export default function Features() {
       ),
       title: "Lightning Fast",
       description: "Process hours of audio in minutes with our optimized AI pipeline.",
-      color: "yellow",
+      gradient: "from-amber-500 to-yellow-600",
     },
     {
       icon: (
@@ -58,26 +58,17 @@ export default function Features() {
       ),
       title: "Team Collaboration",
       description: "Share insights and work together with role-based access control.",
-      color: "pink",
+      gradient: "from-pink-500 to-rose-600",
     },
   ];
 
-  const colorClasses: Record<string, { bg: string; text: string; border: string }> = {
-    blue: { bg: "bg-blue-100", text: "text-blue-600", border: "group-hover:border-blue-300" },
-    green: { bg: "bg-green-100", text: "text-green-600", border: "group-hover:border-green-300" },
-    purple: { bg: "bg-purple-100", text: "text-purple-600", border: "group-hover:border-purple-300" },
-    orange: { bg: "bg-orange-100", text: "text-orange-600", border: "group-hover:border-orange-300" },
-    yellow: { bg: "bg-yellow-100", text: "text-yellow-600", border: "group-hover:border-yellow-300" },
-    pink: { bg: "bg-pink-100", text: "text-pink-600", border: "group-hover:border-pink-300" },
-  };
-
   return (
-    <section id="features" className="py-20 md:py-28 bg-gray-50">
+    <section id="features" className="py-20 md:py-28 bg-white">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 mb-4">
             Everything You Need for{" "}
-            <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <span className="text-gray-400">
               Voice Compliance
             </span>
           </h2>
@@ -86,22 +77,19 @@ export default function Features() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {features.map((feature, index) => {
-            const colors = colorClasses[feature.color];
-            return (
-              <div
-                key={index}
-                className={`group bg-white rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-all duration-300 ${colors.border}`}
-              >
-                <div className={`w-12 h-12 ${colors.bg} rounded-lg flex items-center justify-center mb-4 ${colors.text}`}>
-                  {feature.icon}
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">{feature.title}</h3>
-                <p className="text-gray-600">{feature.description}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {features.map((feature, index) => (
+            <div
+              key={index}
+              className="group relative bg-white rounded-2xl p-8 border border-gray-200 hover:border-gray-300 transition-all duration-300 hover:shadow-xl"
+            >
+              <div className={`w-14 h-14 bg-gradient-to-br ${feature.gradient} rounded-xl flex items-center justify-center mb-5 text-white shadow-lg`}>
+                {feature.icon}
               </div>
-            );
-          })}
+              <h3 className="text-xl font-semibold text-gray-900 mb-3">{feature.title}</h3>
+              <p className="text-gray-600 leading-relaxed">{feature.description}</p>
+            </div>
+          ))}
         </div>
       </div>
     </section>

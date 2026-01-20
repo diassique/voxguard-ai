@@ -41,6 +41,20 @@ export async function POST(request: NextRequest) {
     formData.append("diarize", "true"); // Enable speaker diarization
     // Note: language_code is optional - omitting it enables auto-detection
 
+    // Enhanced Scribe V2 features
+    formData.append("punctuation", "enhanced"); // Better text formatting
+    formData.append("profanity_filter", "true"); // Mask profanity for compliance
+    formData.append("include_sentiment", "true"); // Sentiment analysis
+    formData.append("paragraphs", "true"); // Paragraph detection
+
+    // Custom vocabulary for compliance terms
+    const customVocabulary = [
+      "GDPR", "HIPAA", "compliance", "персональные данные",
+      "конфиденциальность", "согласие", "обработка данных",
+      "субъект данных", "контроллер", "процессор"
+    ];
+    formData.append("vocabulary", JSON.stringify(customVocabulary));
+
     // Call ElevenLabs Batch API
     const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
       method: "POST",

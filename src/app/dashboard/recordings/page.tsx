@@ -4,11 +4,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
 import Sidebar from "@/components/dashboard/Sidebar";
-import { Upload, LogIn, Mic, Clock, ChevronRight } from "lucide-react";
+import { LogIn, Mic, Clock, ChevronRight, Upload } from "lucide-react";
 import ScribeRecorder from "@/components/ScribeRecorder";
+import UploadAudioModal from "@/components/UploadAudioModal";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { toast } from "sonner";
-import { getAllUserSessions, type CallSession } from "@/lib/supabase-recording";
+import {
+  getAllUserSessions,
+  type CallSession,
+} from "@/lib/supabase-recording";
 
 interface RecordingData {
   transcript: string;
@@ -28,21 +32,19 @@ export default function RecordingsPage() {
   const router = useRouter();
   const [sessions, setSessions] = useState<CallSession[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const { isCollapsed } = useSidebar();
 
-  // Refresh session on mount to ensure we have latest auth state
   useEffect(() => {
     refreshSession();
   }, [refreshSession]);
 
   useEffect(() => {
-    // Only redirect if we're done loading and there's no user
     if (!loading && !user) {
       router.push("/login");
     }
   }, [loading, user, router]);
 
-  // Load sessions from database
   useEffect(() => {
     async function loadSessions() {
       if (!user) return;
@@ -64,14 +66,10 @@ export default function RecordingsPage() {
     toast.success("Recording saved successfully!", {
       description: `${data.segments.length} segments, ${data.transcript.split(" ").filter(Boolean).length} words`,
     });
-    console.log("Recording saved:", data);
-
-    // Reload sessions from database
     const updatedSessions = await getAllUserSessions();
     setSessions(updatedSessions);
   }, []);
 
-  // Show loading state
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -83,7 +81,6 @@ export default function RecordingsPage() {
     );
   }
 
-  // Show login prompt if not authenticated (will redirect shortly)
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -115,28 +112,23 @@ export default function RecordingsPage() {
               <h1 className="text-3xl font-semibold text-gray-900">Recordings</h1>
               <p className="text-gray-600 mt-1">Record and manage your voice recordings</p>
             </div>
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#FF6B35] text-white rounded-full hover:bg-[#E85A2A] active:bg-[#D14E1F] transition-colors font-medium"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Audio
+            </button>
           </div>
         </div>
 
-        {/* Live Recording with WebSocket */}
-        <div className="mb-8">
+        <div className="mb-6">
           <ScribeRecorder
             onTranscriptComplete={handleTranscriptComplete}
             onSave={handleSaveRecording}
           />
         </div>
 
-        {/* Upload Area */}
-        <div className="bg-white rounded-2xl border-2 border-dashed border-gray-300 p-12 text-center mb-8 hover:border-gray-400 transition-colors cursor-pointer">
-          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Upload className="w-8 h-8 text-gray-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Upload Audio Files</h3>
-          <p className="text-gray-600 mb-4">Drag and drop your audio files here, or click to browse</p>
-          <p className="text-sm text-gray-500">Supports MP3, WAV, M4A, FLAC (max 500MB)</p>
-        </div>
-
-        {/* Recordings List */}
         <div className="bg-white rounded-2xl border border-gray-200">
           <div className="px-6 py-5 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -211,6 +203,15 @@ export default function RecordingsPage() {
           )}
         </div>
       </div>
+
+      <UploadAudioModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onUploadComplete={async () => {
+          const updatedSessions = await getAllUserSessions();
+          setSessions(updatedSessions);
+        }}
+      />
     </div>
   );
 }
