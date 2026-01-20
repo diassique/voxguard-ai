@@ -1,3 +1,8 @@
+// NOTE: NextAuth is currently disabled in favor of Supabase Auth
+// This file is kept for future Google OAuth integration
+// To re-enable Google OAuth, uncomment this file and the API route
+
+/*
 import { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { supabase } from "./supabase";
@@ -99,3 +104,7 @@ export const authOptions: NextAuthOptions = {
   },
   secret: process.env.NEXTAUTH_SECRET,
 };
+*/
+
+// Placeholder export to avoid import errors
+export const authOptions = {};

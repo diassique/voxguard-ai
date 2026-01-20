@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function AuthButton() {
   const { user, loading } = useAuth();
@@ -22,10 +23,12 @@ export default function AuthButton() {
           className="flex items-center gap-3 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all font-medium shadow-sm hover:shadow-md"
         >
           {user.user_metadata?.avatar_url && (
-            <img
+            <Image
               src={user.user_metadata.avatar_url}
               alt={user.user_metadata?.name || "User"}
-              className="w-6 h-6 rounded-full"
+              width={24}
+              height={24}
+              className="rounded-full"
             />
           )}
           <span>Dashboard</span>
@@ -43,7 +46,7 @@ export default function AuthButton() {
         Log in
       </Link>
       <Link
-        href="/login"
+        href="/register"
         className="px-5 py-2.5 bg-[#FF6B35] text-white rounded-full hover:bg-[#E85A2A] active:bg-[#D14E1F] transition-colors font-medium"
       >
         Get Started
