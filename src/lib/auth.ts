@@ -16,7 +16,22 @@ export const authOptions: NextAuthOptions = {
       }
     }),
   ],
+  // Explicitly set the base URL for redirects
+  useSecureCookies: process.env.NEXTAUTH_URL?.startsWith('https://') ?? false,
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      // Ensure redirects always use the correct base URL
+      const actualBaseUrl = process.env.NEXTAUTH_URL || baseUrl;
+
+      // If url is relative, make it absolute with the correct base URL
+      if (url.startsWith('/')) return `${actualBaseUrl}${url}`;
+
+      // If url is on the same origin, allow it
+      if (new URL(url).origin === actualBaseUrl) return url;
+
+      // Otherwise, redirect to base URL
+      return actualBaseUrl;
+    },
     async signIn({ user, account, profile }) {
       try {
         if (!user.email) return false;
