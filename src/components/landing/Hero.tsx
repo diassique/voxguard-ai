@@ -119,10 +119,6 @@ export default function Hero() {
                               <span className="text-[10px] text-gray-600">00:14</span>
                             </div>
                             <p className="text-sm text-gray-400">Hello, I&apos;m calling about the update to your policy.</p>
-...
-                            <p className="text-sm text-gray-200">I actually said I&apos;m not interested in this.</p>
-...
-                              But you have to sign up today, <span className="text-red-400 underline decoration-red-500/50 decoration-wavy underline-offset-2">it&apos;s mandatory for all users</span>.
                           </div>
                         </div>
 
@@ -133,7 +129,7 @@ export default function Hero() {
                               <span className="text-xs font-bold text-gray-300">Customer</span>
                               <span className="text-[10px] text-gray-600">00:19</span>
                             </div>
-                            <p className="text-sm text-gray-200">I actually said I'm not interested in this.</p>
+                            <p className="text-sm text-gray-200">I actually said I&apos;m not interested in this.</p>
                           </div>
                         </div>
 
@@ -147,7 +143,7 @@ export default function Hero() {
                               <span className="text-[10px] text-gray-600">00:23</span>
                             </div>
                             <p className="text-sm text-gray-200">
-                              But you have to sign up today, <span className="text-red-400 underline decoration-red-500/50 decoration-wavy underline-offset-2">it's mandatory for all users</span>.
+                              But you have to sign up today, <span className="text-red-400 underline decoration-red-500/50 decoration-wavy underline-offset-2">it&apos;s mandatory for all users</span>.
                             </p>
                             <div className="inline-flex items-center gap-1.5 mt-2 px-2 py-1 bg-red-500/10 border border-red-500/20 rounded text-red-300 text-xs font-medium">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
